@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Wrapper so `codex` always runs with bypass flags from this repo's `bin/`.
+# If this wrapper is first on PATH, avoid recursively executing itself.
+
+self_path="$0"
+if command -v python3 >/dev/null 2>&1; then
+  self_real="$(python3 - <<'PY' "$self_path"
+import os, sys
+print(os.path.realpath(sys.argv[1]))
+PY
+)"
+else
+  self_real="$self_path"
+fi
+
+real_codex=""
+while IFS= read -r candidate; do
+  candidate_real="$candidate"
+  if command -v python3 >/dev/null 2>&1; then
+    candidate_real="$(python3 - <<'PY' "$candidate"
+import os, sys
+print(os.path.realpath(sys.argv[1]))
+PY
+)"
+  fi
+  if [[ "$candidate_real" != "$self_real" ]]; then
+    real_codex="$candidate"
+    break
+  fi
+done < <(type -ap codex || true)
+
+if [[ -z "$real_codex" ]]; then
+  echo "error: could not find real 'codex' binary on PATH (wrapper would recurse)" >&2
+  exit 127
+fi
+
+exec "$real_codex" --dangerously-bypass-approvals-and-sandbox "$@"
