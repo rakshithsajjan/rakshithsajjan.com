@@ -1,0 +1,26 @@
+[
+  {
+    "slug": "behind-the-scenes",
+    "title": "Behind the scenes",
+    "description": "Thoughts on choosing the stack for this personal site.",
+    "tags": [
+      "stack",
+      "cloudflare"
+    ],
+    "pubDate": "2025-01-19",
+    "url": "/blog/behind-the-scenes",
+    "preview": "Astro felt like a natural fit because I want Markdown-first content, a modern component model, and ease of rendering on the edge. Running the build through Cloudflare Workers keeps costs predictable and delivers fast responses globally. I"
+  },
+  {
+    "slug": "first-steps",
+    "title": "Welcome to the site",
+    "description": "Setting up a place for writing about tech, design, and life.",
+    "tags": [
+      "notes",
+      "launch"
+    ],
+    "pubDate": "2025-01-18",
+    "url": "/blog/first-steps",
+    "preview": "This site is the beginning of a long-form journal about building, writing, and sharing ideas. I'm starting with Astro + Cloudflare Workers so that the deployment is fast and the content lives at the edge. More posts are on the way!"
+  }
+]

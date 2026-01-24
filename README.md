@@ -1,80 +1,44 @@
 # rakshithsajjan.com
 
-Personal website + blog, deployed to Cloudflare using Workers.
+Personal site + blog built with Astro, served from Cloudflare Workers. Posts are Markdown-first; the background video loops in the hero and search/RSS are baked in via precomputed JSON and the Astro RSS integration.
 
-## Goals
+## Features
 
-- Fast, mostly-static site (home, about, projects, blog).
-- Blog/content authored in Markdown (TBD on engine).
-- Deployed on Cloudflare Workers; domain managed in Cloudflare.
+- **Markdown modules** (imported via `import.meta.glob`) drive the blog metadata and rendering (`src/content/blog`).
+- **Hero video loop** (muted + autoplay) sits behind the intro copy; swap `src/pages/index.astro` with your own MP4/WebM in `public/` or point to a CDN asset.
+- **Search** consumes `public/search-index.json` to power client-side filtering; run `npm run generate-search-index` when you add or edit posts.
+- **RSS** endpoint at `/rss.xml` powered by `@astrojs/rss` (feeds every Markdown entry).
+- **Cloudflare Worker site** (`workers-site/index.js`) serves the Astro `dist/` build, enforces `www → non-www` redirects, and ships via Wrangler with static asset bindings.
 
-## Planned Architecture (Cloudflare Workers)
-
-This will likely be:
-
-- Static assets (HTML/CSS/JS, images) served by a Worker.
-- Optional dynamic endpoints later (e.g. RSS generation, redirects, analytics proxy).
-
-Cloudflare now supports Workers with static assets; once we decide the site generator (or plain HTML), we’ll wire it up via `wrangler`.
-
-## Local Dev (once scaffolded)
-
-Typical loop will be:
+## Scripts
 
 ```sh
-wrangler dev
+npm install
+npm run dev                    # Astro dev server with hot reload
+npm run build                  # regenerate the search index and build for production
+npm run preview                # preview the built site locally
+npm run generate-search-index  # refresh public/search-index.json
 ```
 
-## Deploy (once scaffolded)
+## Content workflow
 
-1. Log in to Cloudflare:
+1. Add `.md` files under `src/content/blog/` with frontmatter: `title`, `description`, `pubDate`, optional `tags`, optional `cover`.
+2. Run `npm run generate-search-index` to refresh the client search payload.
+3. Run `npm run build` to emit `dist/` and prepare assets for Cloudflare.
 
-```sh
-wrangler login
-```
+## Cloudflare deployment
 
-2. Deploy:
+1. Install Wrangler (`npm install -g wrangler`) and log in: `wrangler login`.
+2. Update `wrangler.toml`: fill `route` (e.g., `rakshithsajjan.com/*`) and `zone_id` (your Cloudflare zone). `account_id` and `workers_dev` are already set.
+3. Deploy static assets plus the redirect worker:
+   ```sh
+   npm run build
+   wrangler publish
+   ```
+4. Use the Cloudflare dashboard if needed to verify the Worker is attached to `rakshithsajjan.com` and to manage SSL or edge rules.
 
-```sh
-wrangler deploy
-```
+## Suggestions & next steps
 
-3. Connect the domain route in Cloudflare (either via `wrangler` config or the dashboard) so `rakshithsajjan.com/*` points to the Worker.
-
-## Open Questions (to decide next)
-
-- Content pipeline: plain HTML vs. Astro/Eleventy/Next-export vs. custom Markdown → HTML.
-- Blog features: tags, search, RSS, syntax highlighting, drafts.
-- Styling: minimal typography vs. more custom design; light/dark mode.
-
-## Dev Tooling
-
-### Codex wrapper
-
-This repo includes a small wrapper script at `bin/codex` so you can run:
-
-```sh
-codex ...
-```
-
-and it will invoke:
-
-```sh
-codex --dangerously-bypass-approvals-and-sandbox ...
-```
-
-### Enable it for this terminal
-
-From this repo root:
-
-```sh
-export PATH="$PWD/bin:$PATH"
-```
-
-### Enable it permanently (zsh)
-
-Prefer an alias (avoids PATH recursion):
-
-```sh
-alias codex="command codex --dangerously-bypass-approvals-and-sandbox"
-```
+- Replace the placeholder video `src/pages/index.astro` references with your final clip (drop the file in `public/` or use a CDN link).
+- Wire up tag filtering, RSS categories, or newsletter signup as needed—everything compiles to static files, so the Worker stays simple.
+- Once the zone is active, point `rakshithsajjan.com` to the Worker route and keep the search JSON fresh via the provided script.

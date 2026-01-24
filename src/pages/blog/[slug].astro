@@ -1,0 +1,45 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+const postModules = import.meta.glob('../../content/blog/*.md', { eager: true });
+export async function getStaticPaths() {
+  const modules = import.meta.glob('../../content/blog/*.md', { eager: true });
+  return Object.keys(modules).map((file) => {
+    const slug = file.split('/').pop().replace(/\.md$/, '');
+    return { params: { slug } };
+  });
+}
+const posts = Object.entries(postModules).map(([file, module]) => {
+  const slug = file.split('/').pop().replace(/\.md$/, '');
+  return {
+    slug,
+    url: module.url ?? `/blog/${slug}`,
+    frontmatter: module.frontmatter ?? module.default?.frontmatter,
+    Content: module.default
+  };
+});
+
+const slug = Astro.params.slug;
+const post = posts.find((entry) => entry.slug === slug);
+if (!post) {
+  throw new Error(`Post not found: ${slug}`);
+}
+const Content = post.Content;
+---
+<BaseLayout title={post.frontmatter.title} description={post.frontmatter.description}>
+  <article class="page-grid">
+    <div>
+      <p><small>{new Date(post.frontmatter.pubDate).toLocaleDateString('en-US', { dateStyle: 'long' })}</small></p>
+      <h1>{post.frontmatter.title}</h1>
+      <p>{post.frontmatter.description}</p>
+      <div class="tags">
+        {post.frontmatter.tags?.map((tag) => (
+          <span class="tag" key={tag}>{tag}</span>
+        ))}
+      </div>
+      <section class="content-body">
+        <Content />
+      </section>
+    </div>
+  </article>
+</BaseLayout>

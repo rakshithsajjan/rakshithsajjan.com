@@ -1,0 +1,8 @@
+name = "rakshithsajjan-com"
+account_id = "d32b2bb7988d00af60d179272f3fd044"
+compatibility_date = "2025-01-01"
+workers_dev = true
+route = "rakshithsajjan.com/*"
+main = "workers-site/index.js"
+
+site = { bucket = "./dist" }

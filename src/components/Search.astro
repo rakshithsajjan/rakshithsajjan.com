@@ -1,0 +1,57 @@
+<section class="search-panel">
+  <h2>Search the blog</h2>
+  <input id="search-input" type="search" placeholder="Search keywords, tags, or titles" />
+  <div class="search-results" id="search-results" aria-live="polite"></div>
+</section>
+
+<script type="module">
+  const fetchIndex = async () => {
+    const response = await fetch('/search-index.json');
+    return response.ok ? response.json() : [];
+  };
+
+  const renderResults = (results) => {
+    const container = document.getElementById('search-results');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!results.length) {
+      container.innerHTML = '<p>No matches yet.</p>';
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    results.slice(0, 5).forEach((item) => {
+      const card = document.createElement('div');
+      card.className = 'search-card';
+      card.innerHTML = `
+        <strong><a href="${item.url}">${item.title}</a></strong>
+        <p>${item.description}</p>
+      `;
+      fragment.appendChild(card);
+    });
+    container.appendChild(fragment);
+  };
+
+  fetchIndex().then((posts) => {
+    const input = document.getElementById('search-input');
+    if (!input) return;
+    const search = (query) => {
+      const normalized = query.trim().toLowerCase();
+      if (!normalized) {
+        renderResults(posts);
+        return;
+      }
+      const filtered = posts.filter((post) => {
+        const haystack = [post.title, post.description, ...(post.tags || [])].join(' ').toLowerCase();
+        return haystack.includes(normalized);
+      });
+      renderResults(filtered);
+    };
+
+    input.addEventListener('input', (event) => {
+      search(event.target.value);
+    });
+
+    renderResults(posts);
+  });
+</script>

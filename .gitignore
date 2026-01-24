@@ -3,6 +3,7 @@
 # Cloudflare / Wrangler
 .wrangler/
 dist/
+.astro/
 
 # Node (if we add a generator/build later)
 node_modules/
@@ -10,4 +11,3 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-

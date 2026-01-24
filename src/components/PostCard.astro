@@ -1,0 +1,22 @@
+---
+const { post } = Astro.props;
+const slug = post.slug;
+const url = post.url ?? `/blog/${slug}`;
+const frontmatter = post.frontmatter ?? post.data;
+---
+<article class="post-card">
+  <a href={url} aria-label={`Read ${frontmatter.title}`}>
+    <h3>{frontmatter.title}</h3>
+    <p>{frontmatter.description}</p>
+    <p>
+      <small>{new Date(frontmatter.pubDate).toLocaleDateString('en-US', { dateStyle: 'medium' })}</small>
+    </p>
+  </a>
+  {frontmatter.tags?.length ? (
+    <div class="tags">
+      {frontmatter.tags.map((tag) => (
+        <span class="tag" key={tag}>{tag}</span>
+      ))}
+    </div>
+  ) : null}
+</article>

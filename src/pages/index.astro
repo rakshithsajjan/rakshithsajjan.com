@@ -1,0 +1,56 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PostCard from '../components/PostCard.astro';
+import Search from '../components/Search.astro';
+
+const postModules = import.meta.glob('../content/blog/*.md', { eager: true });
+const posts = Object.entries(postModules).map(([file, module]) => {
+  const slug = file.split('/').pop().replace(/\.md$/, '');
+  return {
+    slug,
+    url: module.url ?? `/blog/${slug}`,
+    frontmatter: module.frontmatter ?? module.default?.frontmatter,
+    component: module.default
+  };
+});
+
+const sortedPosts = posts.sort((a, b) => {
+  return new Date(b.frontmatter.pubDate).getTime() - new Date(a.frontmatter.pubDate).getTime();
+});
+
+const hero = sortedPosts[0];
+---
+<BaseLayout title="Rakshith Sajjan" description="Experiments and writing from Rakshith Sajjan.">
+  <main>
+    <section class="hero">
+      <video autoplay muted loop playsinline preload="auto">
+        <source src="https://assets.mixkit.co/videos/preview/mixkit-sunrise-over-the-mountains-3347-large.mp4" type="video/mp4" />
+      </video>
+      <div class="overlay"></div>
+      <div class="content">
+        <p>Computing · Design · Life</p>
+        <h1>Rakshith Sajjan</h1>
+        <p>Writing, tinkering, and building in public. This site is home for long-form thoughts, experiments, and a bit of personality.</p>
+        {hero ? (
+          <a class="hero-link" href={hero.url} aria-label={`Read latest post ${hero.frontmatter.title}`}>
+            Latest: {hero.frontmatter.title}
+          </a>
+        ) : null}
+      </div>
+    </section>
+
+    <div class="page-grid">
+      <div>
+        <h2>Latest posts</h2>
+        <div class="posts">
+          {sortedPosts.map((post) => (
+            <PostCard post={post} key={post.slug} />
+          ))}
+        </div>
+      </div>
+      <aside>
+        <Search />
+      </aside>
+    </div>
+  </main>
+</BaseLayout>
