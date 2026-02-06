@@ -1,17 +1,5 @@
 [
   {
-    "slug": "behind-the-scenes",
-    "title": "Behind the scenes",
-    "description": "Thoughts on choosing the stack for this personal site.",
-    "tags": [
-      "stack",
-      "cloudflare"
-    ],
-    "pubDate": "2025-01-19",
-    "url": "/blog/behind-the-scenes",
-    "preview": "Astro felt like a natural fit because I want Markdown-first content, a modern component model, and ease of rendering on the edge. Running the build through Cloudflare Workers keeps costs predictable and delivers fast responses globally. I"
-  },
-  {
     "slug": "first-steps",
     "title": "Welcome to the site",
     "description": "Setting up a place for writing about tech, design, and life.",
