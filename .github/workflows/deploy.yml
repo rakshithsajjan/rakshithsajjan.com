@@ -34,14 +34,15 @@ jobs:
           awk '!/^route *=/' wrangler.toml > wrangler.ci.toml
 
       - name: Verify Cloudflare auth
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler@3 whoami
+        run: |
+          export CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          export CF_API_TOKEN="$CLOUDFLARE_API_TOKEN"
+          npx wrangler@3 whoami
 
       - name: Deploy with Wrangler CLI
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
+          export CLOUDFLARE_API_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          export CF_API_TOKEN="$CLOUDFLARE_API_TOKEN"
           if ! npx wrangler@3 deploy --config wrangler.ci.toml > wrangler-deploy.log 2>&1; then
             msg="$(tail -n 60 wrangler-deploy.log | tr '\n' '|' | sed 's/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             echo "::error title=Wrangler deploy failed::$msg"
