@@ -33,9 +33,12 @@ jobs:
         run: |
           awk '!/^route *=/' wrangler.toml > wrangler.ci.toml
 
-      - name: Deploy with Wrangler
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: d32b2bb7988d00af60d179272f3fd044
-          command: deploy --config wrangler.ci.toml
+      - name: Verify Cloudflare auth
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler whoami
+
+      - name: Deploy with Wrangler CLI
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy --config wrangler.ci.toml
