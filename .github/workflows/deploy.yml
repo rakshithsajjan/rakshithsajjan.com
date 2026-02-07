@@ -40,7 +40,10 @@ jobs:
             token="${{ secrets.CF_API_TOKEN }}"
           fi
           if [ -z "$token" ]; then
-            echo "::error title=Missing Cloudflare token::Set CLOUDFLARE_API_TOKEN or CF_API_TOKEN in GitHub Actions secrets."
+            token="${{ secrets.CLOUDFLARE_API_KEY }}"
+          fi
+          if [ -z "$token" ]; then
+            echo "::error title=Missing Cloudflare token::Set CLOUDFLARE_API_TOKEN, CF_API_TOKEN, or CLOUDFLARE_API_KEY in GitHub Actions secrets."
             exit 1
           fi
           export CLOUDFLARE_API_TOKEN="$token"
@@ -54,7 +57,10 @@ jobs:
             token="${{ secrets.CF_API_TOKEN }}"
           fi
           if [ -z "$token" ]; then
-            echo "::error title=Missing Cloudflare token::Set CLOUDFLARE_API_TOKEN or CF_API_TOKEN in GitHub Actions secrets."
+            token="${{ secrets.CLOUDFLARE_API_KEY }}"
+          fi
+          if [ -z "$token" ]; then
+            echo "::error title=Missing Cloudflare token::Set CLOUDFLARE_API_TOKEN, CF_API_TOKEN, or CLOUDFLARE_API_KEY in GitHub Actions secrets."
             exit 1
           fi
           export CLOUDFLARE_API_TOKEN="$token"
