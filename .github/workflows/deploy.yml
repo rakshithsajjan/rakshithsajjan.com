@@ -36,9 +36,9 @@ jobs:
       - name: Verify Cloudflare auth
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler whoami
+        run: npx wrangler@3 whoami
 
       - name: Deploy with Wrangler CLI
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler deploy --config wrangler.ci.toml
+        run: npx wrangler@3 deploy --config wrangler.ci.toml
