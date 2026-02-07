@@ -1,0 +1,44 @@
+---
+interface Props {
+  manifestUrl?: string;
+  framesUrl?: string;
+  posterUrl?: string;
+}
+
+const {
+  manifestUrl = '/media/ascii-bike/manifest.json',
+  framesUrl = '/media/ascii-bike/frames.bin.br',
+  posterUrl = '/media/ascii-bike/poster.txt'
+} = Astro.props as Props;
+---
+<div
+  class="ascii-bg"
+  data-ascii-bg
+  data-manifest-url={manifestUrl}
+  data-frames-url={framesUrl}
+  data-poster-url={posterUrl}
+  aria-hidden="true"
+>
+  <canvas class="ascii-bg__canvas"></canvas>
+  <pre class="ascii-bg__poster" hidden></pre>
+</div>
+
+<script>
+  import { initAsciiPlayer } from './ascii-player';
+
+  const node = document.querySelector('[data-ascii-bg]');
+  if (node instanceof HTMLElement) {
+    const manifestUrl = node.dataset.manifestUrl ?? '/media/ascii-bike/manifest.json';
+    const framesUrl = node.dataset.framesUrl ?? '/media/ascii-bike/frames.bin.br';
+    const posterUrl = node.dataset.posterUrl ?? '/media/ascii-bike/poster.txt';
+
+    initAsciiPlayer({
+      container: node,
+      manifestUrl,
+      framesUrl,
+      posterUrl,
+      loop: true,
+      autoplay: true
+    });
+  }
+</script>

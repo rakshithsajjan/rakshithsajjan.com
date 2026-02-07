@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import PostCard from '../components/PostCard.astro';
 import Search from '../components/Search.astro';
+import AsciiBackground from '../components/AsciiBackground.astro';
 
 const postModules = import.meta.glob('../content/blog/*.md', { eager: true });
 const posts = Object.entries(postModules).map(([file, module]) => {
@@ -23,9 +24,7 @@ const hero = sortedPosts[0];
 <BaseLayout title="Rakshith Sajjan" description="Experiments and writing from Rakshith Sajjan.">
   <main>
     <section class="hero">
-      <video autoplay muted loop playsinline preload="auto">
-        <source src="https://assets.mixkit.co/videos/preview/mixkit-sunrise-over-the-mountains-3347-large.mp4" type="video/mp4" />
-      </video>
+      <AsciiBackground />
       <div class="overlay"></div>
       <div class="content">
         <p>Computing · Design · Life</p>

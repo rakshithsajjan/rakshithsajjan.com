@@ -1,0 +1,10 @@
+{
+  "input": "/Users/rakshithsajjan/Downloads/website1.mov",
+  "outDir": "/Users/rakshithsajjan/Documents/projects/mywebsite/public/media/ascii-bike",
+  "frameCount": 632,
+  "fps": 15,
+  "cols": 240,
+  "rows": 84,
+  "rawBytes": 10376870,
+  "compressedBytes": 4820510
+}

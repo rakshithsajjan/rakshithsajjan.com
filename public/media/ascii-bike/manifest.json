@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "fps": 15,
+  "cols": 240,
+  "rows": 84,
+  "durationMs": 42133,
+  "frameCount": 632,
+  "charset": " .,:;irsXA253hMHGS#9B&@",
+  "colorMode": "amber-phosphor",
+  "tintColor": "#ffbf00",
+  "phosphorStrength": 0.72,
+  "backgroundColor": "#000000",
+  "glyphAspect": 0.62,
+  "videoAspect": 1.7777777777777777,
+  "encoding": "delta-rle-v1",
+  "keyframeEvery": 30,
+  "effects": {
+    "bloom": {
+      "enabled": true,
+      "threshold": 0.7,
+      "softThreshold": 0.5,
+      "intensity": 0.6,
+      "radius": 6
+    },
+    "grain": {
+      "enabled": true,
+      "intensity": 30,
+      "size": 2,
+      "speed": 75
+    },
+    "chromatic": {
+      "enabled": true,
+      "offset": 3
+    },
+    "scanlines": {
+      "enabled": true,
+      "opacity": 0.15,
+      "spacing": 3
+    },
+    "vignette": {
+      "enabled": false,
+      "intensity": 0.5,
+      "radius": 0.5
+    },
+    "crtCurve": {
+      "enabled": true,
+      "amount": 0.15
+    },
+    "phosphor": {
+      "enabled": true,
+      "color": "amber",
+      "customColor": "#ffbf00"
+    }
+  },
+  "tone": {
+    "blackPoint": 0.13,
+    "whitePoint": 0.88,
+    "outputGamma": 1.42,
+    "bloomStrength": 0.52,
+    "phosphorStrength": 0.72
+  },
+  "source": {
+    "width": 1280,
+    "height": 720,
+    "duration": 42.125
+  }
+}

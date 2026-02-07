@@ -8,6 +8,7 @@
     "build": "npm run generate-search-index && astro build",
     "preview": "astro preview",
     "generate-search-index": "node scripts/generate-search-index.mjs",
+    "build:ascii-video": "node scripts/build-ascii-video.mjs",
     "clean": "rm -rf dist node_modules package-lock.json"
   },
   "dependencies": {
