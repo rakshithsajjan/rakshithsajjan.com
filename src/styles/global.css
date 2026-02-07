@@ -78,11 +78,14 @@ img {
 }
 
 .hero .content {
-  position: relative;
+  position: absolute;
   z-index: 2;
-  padding: 4rem 1.5rem;
-  max-width: 960px;
-  margin: 0 auto;
+  right: clamp(1rem, 4vw, 4rem);
+  bottom: clamp(1.5rem, 7vh, 4.5rem);
+  width: min(48rem, calc(100vw - 2rem));
+  text-align: right;
+  margin: 0;
+  padding: 0;
 }
 
 .hero h1 {
@@ -93,6 +96,7 @@ img {
 .hero p {
   font-size: 1.2rem;
   max-width: 52ch;
+  margin-left: auto;
 }
 
 .hero-link {
@@ -187,6 +191,14 @@ img {
 @media (min-width: 900px) {
   .page-grid {
     grid-template-columns: 2fr 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .hero .content {
+    right: 1rem;
+    left: 1rem;
+    width: auto;
   }
 }
 
