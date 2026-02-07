@@ -36,18 +36,33 @@ jobs:
       - name: Verify Cloudflare auth
         run: |
           token="${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          if [ -z "$token" ]; then
-            token="${{ secrets.CF_API_TOKEN }}"
-          fi
-          if [ -z "$token" ]; then
-            token="${{ secrets.CLOUDFLARE_API_KEY }}"
-          fi
-          if [ -z "$token" ]; then
-            echo "::error title=Missing Cloudflare token::Set CLOUDFLARE_API_TOKEN, CF_API_TOKEN, or CLOUDFLARE_API_KEY in GitHub Actions secrets."
+          if [ -z "$token" ]; then token="${{ secrets.CF_API_TOKEN }}"; fi
+
+          api_key="${{ secrets.CLOUDFLARE_API_KEY }}"
+          if [ -z "$api_key" ]; then api_key="${{ secrets.CF_API_KEY }}"; fi
+
+          email="${{ secrets.CLOUDFLARE_EMAIL }}"
+          if [ -z "$email" ]; then email="${{ secrets.CF_EMAIL }}"; fi
+
+          if [ -z "$token" ] && [ -z "$api_key" ]; then
+            echo "::error title=Missing Cloudflare auth::Set CLOUDFLARE_API_TOKEN (recommended) or CLOUDFLARE_API_KEY (+ CLOUDFLARE_EMAIL)."
             exit 1
           fi
-          export CLOUDFLARE_API_TOKEN="$token"
-          export CF_API_TOKEN="$token"
+
+          if [ -n "$token" ]; then
+            export CLOUDFLARE_API_TOKEN="$token"
+            export CF_API_TOKEN="$token"
+          else
+            if [ -z "$email" ]; then
+              echo "::error title=Missing Cloudflare email::When using CLOUDFLARE_API_KEY, also set CLOUDFLARE_EMAIL (or CF_EMAIL)."
+              exit 1
+            fi
+            export CLOUDFLARE_API_KEY="$api_key"
+            export CF_API_KEY="$api_key"
+            export CLOUDFLARE_EMAIL="$email"
+            export CF_EMAIL="$email"
+          fi
+
           if ! npx wrangler@3 whoami > wrangler-whoami.log 2>&1; then
             msg="$(tail -n 60 wrangler-whoami.log | tr '\n' '|' | sed 's/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             echo "::error title=Wrangler auth failed::$msg"
@@ -59,18 +74,33 @@ jobs:
       - name: Deploy with Wrangler CLI
         run: |
           token="${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          if [ -z "$token" ]; then
-            token="${{ secrets.CF_API_TOKEN }}"
-          fi
-          if [ -z "$token" ]; then
-            token="${{ secrets.CLOUDFLARE_API_KEY }}"
-          fi
-          if [ -z "$token" ]; then
-            echo "::error title=Missing Cloudflare token::Set CLOUDFLARE_API_TOKEN, CF_API_TOKEN, or CLOUDFLARE_API_KEY in GitHub Actions secrets."
+          if [ -z "$token" ]; then token="${{ secrets.CF_API_TOKEN }}"; fi
+
+          api_key="${{ secrets.CLOUDFLARE_API_KEY }}"
+          if [ -z "$api_key" ]; then api_key="${{ secrets.CF_API_KEY }}"; fi
+
+          email="${{ secrets.CLOUDFLARE_EMAIL }}"
+          if [ -z "$email" ]; then email="${{ secrets.CF_EMAIL }}"; fi
+
+          if [ -z "$token" ] && [ -z "$api_key" ]; then
+            echo "::error title=Missing Cloudflare auth::Set CLOUDFLARE_API_TOKEN (recommended) or CLOUDFLARE_API_KEY (+ CLOUDFLARE_EMAIL)."
             exit 1
           fi
-          export CLOUDFLARE_API_TOKEN="$token"
-          export CF_API_TOKEN="$token"
+
+          if [ -n "$token" ]; then
+            export CLOUDFLARE_API_TOKEN="$token"
+            export CF_API_TOKEN="$token"
+          else
+            if [ -z "$email" ]; then
+              echo "::error title=Missing Cloudflare email::When using CLOUDFLARE_API_KEY, also set CLOUDFLARE_EMAIL (or CF_EMAIL)."
+              exit 1
+            fi
+            export CLOUDFLARE_API_KEY="$api_key"
+            export CF_API_KEY="$api_key"
+            export CLOUDFLARE_EMAIL="$email"
+            export CF_EMAIL="$email"
+          fi
+
           if ! npx wrangler@3 deploy --config wrangler.ci.toml > wrangler-deploy.log 2>&1; then
             msg="$(tail -n 60 wrangler-deploy.log | tr '\n' '|' | sed 's/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
             echo "::error title=Wrangler deploy failed::$msg"
