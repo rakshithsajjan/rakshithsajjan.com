@@ -41,4 +41,11 @@ jobs:
       - name: Deploy with Wrangler CLI
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler@3 deploy --config wrangler.ci.toml
+        run: |
+          if ! npx wrangler@3 deploy --config wrangler.ci.toml > wrangler-deploy.log 2>&1; then
+            msg="$(tail -n 60 wrangler-deploy.log | tr '\n' '|' | sed 's/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')"
+            echo "::error title=Wrangler deploy failed::$msg"
+            cat wrangler-deploy.log
+            exit 1
+          fi
+          cat wrangler-deploy.log
