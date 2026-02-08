@@ -19,7 +19,6 @@ type Manifest = {
   glyphAspect?: number;
   phosphorStrength?: number;
   videoAspect?: number;
-  charGlow?: number;
 };
 
 function hexToRgb(hex: string) {
@@ -232,8 +231,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const fontSize = Math.max(4, lineHeight);
 
     const rgb = hexToRgb(meta.tintColor || '#ffbf00');
-    const phosphorStrength = Math.min(1, Math.max(0.4, meta.phosphorStrength ?? 0.9));
-    const charGlow = Math.min(1.6, Math.max(0, meta.charGlow ?? 1.0));
+    const phosphorStrength = Math.min(1, Math.max(0.4, meta.phosphorStrength ?? 0.82));
     ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
     ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
     ctx.imageSmoothingEnabled = false;
@@ -241,28 +239,14 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${0.45 * charGlow})`;
-    ctx.shadowBlur = 6 * charGlow;
+    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
+    ctx.shadowBlur = 4;
 
     const chars = meta.charset;
     const rowBuffer = new Array(meta.cols);
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(scaleX, 1);
-    ctx.globalCompositeOperation = 'source-over';
-    for (let y = 0; y < meta.rows; y += 1) {
-      const rowStart = y * meta.cols;
-      for (let x = 0; x < meta.cols; x += 1) {
-        rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
-      }
-      ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
-    }
-
-    // Add a soft phosphor bloom pass to make glyphs read brighter.
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${0.18 * charGlow})`;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${0.6 * charGlow})`;
-    ctx.shadowBlur = 11 * charGlow;
     for (let y = 0; y < meta.rows; y += 1) {
       const rowStart = y * meta.cols;
       for (let x = 0; x < meta.cols; x += 1) {
