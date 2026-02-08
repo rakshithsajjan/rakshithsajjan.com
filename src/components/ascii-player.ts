@@ -293,6 +293,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   document.addEventListener('visibilitychange', visibilityHandler);
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let isDestroyed = false;
 
   Promise.all([
     fetch(manifestUrl).then(async (res) => {
@@ -322,13 +323,38 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
   rafId = window.requestAnimationFrame(tick);
 
+  const pageHideHandler = (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      running = false;
+      lastTick = 0;
+      return;
+    }
+    cleanup();
+  };
+
+  const pageShowHandler = (event: PageTransitionEvent) => {
+    if (isDestroyed || !event.persisted) return;
+    if (reducedMotion.matches) return;
+    if (autoplay && inViewport) {
+      running = true;
+      lastTick = 0;
+    }
+  };
+
   const cleanup = () => {
+    if (isDestroyed) return;
+    isDestroyed = true;
     window.cancelAnimationFrame(rafId);
     observer.disconnect();
     resizeObserver.disconnect();
     document.removeEventListener('visibilitychange', visibilityHandler);
+    window.removeEventListener('pagehide', pageHideHandler);
+    window.removeEventListener('pageshow', pageShowHandler);
+    window.removeEventListener('beforeunload', cleanup);
   };
 
-  window.addEventListener('pagehide', cleanup, { once: true });
+  window.addEventListener('pagehide', pageHideHandler);
+  window.addEventListener('pageshow', pageShowHandler);
+  window.addEventListener('beforeunload', cleanup);
   return cleanup;
 }

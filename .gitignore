@@ -1,13 +1,25 @@
+# macOS
 .DS_Store
+**/.DS_Store
 
-# Cloudflare / Wrangler
-.wrangler/
-dist/
-.astro/
-
-# Node (if we add a generator/build later)
+# Node
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Build artifacts
+.astro/
+dist/
+
+# Cloudflare / Wrangler local state
+.wrangler/
+
+# Local temp / scratch
+.tmp/
+fafo/
+
+# Editor / misc
+*.swp
+*.swo
