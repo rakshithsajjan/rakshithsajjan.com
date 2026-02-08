@@ -53,11 +53,18 @@
     }
   },
   "tone": {
-    "blackPoint": 0.09,
-    "whitePoint": 0.94,
-    "outputGamma": 1.18,
-    "bloomStrength": 0.68,
+    "blackPoint": 0.1,
+    "whitePoint": 0.92,
+    "outputGamma": 1.26,
+    "bloomStrength": 0.62,
     "phosphorStrength": 0.9
+  },
+  "separation": {
+    "profile": "balanced",
+    "separationStrength": 0.38,
+    "edgeThreshold": 0.1,
+    "skySmoothStrength": 0.22,
+    "skyFlatnessThreshold": 0.08
   },
   "source": {
     "width": 1280,

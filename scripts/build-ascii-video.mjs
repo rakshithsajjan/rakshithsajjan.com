@@ -78,6 +78,52 @@ function clamp01(value) {
   return value < 0 ? 0 : value > 1 ? 1 : value;
 }
 
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function parseNumber(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function getProfileDefaults(profileName) {
+  const profiles = {
+    subtle: {
+      separationStrength: 0.24,
+      edgeThreshold: 0.12,
+      skySmoothStrength: 0.14,
+      skyFlatnessThreshold: 0.07,
+      blackPoint: 0.09,
+      whitePoint: 0.93,
+      outputGamma: 1.2,
+      bloomStrength: 0.68
+    },
+    balanced: {
+      separationStrength: 0.38,
+      edgeThreshold: 0.1,
+      skySmoothStrength: 0.22,
+      skyFlatnessThreshold: 0.08,
+      blackPoint: 0.1,
+      whitePoint: 0.92,
+      outputGamma: 1.26,
+      bloomStrength: 0.62
+    },
+    strong: {
+      separationStrength: 0.56,
+      edgeThreshold: 0.08,
+      skySmoothStrength: 0.3,
+      skyFlatnessThreshold: 0.1,
+      blackPoint: 0.11,
+      whitePoint: 0.9,
+      outputGamma: 1.34,
+      bloomStrength: 0.56
+    }
+  };
+
+  return profiles[profileName] ?? profiles.balanced;
+}
+
 function hashNoise(x, y, frame, speed) {
   let n = (x * 73856093) ^ (y * 19349663) ^ (Math.floor(frame * speed) * 83492791);
   n = (n << 13) ^ n;
@@ -121,7 +167,7 @@ function boxBlur(input, width, height, radius) {
   return out;
 }
 
-function applyEffects(luma, width, height, preset, frameIndex, tone) {
+function applyEffects(luma, width, height, preset, frameIndex, tone, separation) {
   const out = new Float32Array(luma.length);
   out.set(luma);
 
@@ -215,6 +261,39 @@ function applyEffects(luma, width, height, preset, frameIndex, tone) {
         out[i] = clamp01(out[i] + noise * intensity * 0.25);
       }
     }
+  }
+
+  const localMean = boxBlur(out, width, height, 1);
+  const edgeMagnitudes = new Float32Array(out.length);
+  let maxEdge = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = y * width + x;
+      const left = y * width + Math.max(0, x - 1);
+      const right = y * width + Math.min(width - 1, x + 1);
+      const up = Math.max(0, y - 1) * width + x;
+      const down = Math.min(height - 1, y + 1) * width + x;
+      const gx = out[right] - out[left];
+      const gy = out[down] - out[up];
+      const mag = Math.sqrt(gx * gx + gy * gy);
+      edgeMagnitudes[i] = mag;
+      if (mag > maxEdge) maxEdge = mag;
+    }
+  }
+
+  const maxEdgeSafe = maxEdge > 0 ? maxEdge : 1;
+  const edgeThreshold = Math.max(0.001, separation.edgeThreshold);
+  for (let i = 0; i < out.length; i += 1) {
+    const edgeNorm = clamp01(edgeMagnitudes[i] / maxEdgeSafe);
+    const midtoneWeight = clamp01(1 - Math.abs(out[i] - 0.5) * 2);
+    const mask = edgeNorm * 0.65 + midtoneWeight * 0.35;
+    const localDelta = out[i] - localMean[i];
+    out[i] = clamp01(out[i] + localDelta * separation.separationStrength * mask);
+
+    const localUniformity = clamp01(1 - Math.abs(localDelta) / Math.max(0.001, separation.skyFlatnessThreshold));
+    const lowEdgeWeight = clamp01(1 - edgeNorm / edgeThreshold);
+    const flatMask = lowEdgeWeight * localUniformity;
+    out[i] = clamp01(lerp(out[i], localMean[i], separation.skySmoothStrength * flatMask));
   }
 
   const blackPoint = tone.blackPoint ?? 0.08;
@@ -319,12 +398,21 @@ function main() {
   const outDir = resolve(args.out ?? 'public/media/ascii-bike');
   const tintColor = '#ffbf00';
   const glyphAspect = Number(args.glyphAspect ?? 0.62);
+  const profile = args.profile ?? 'balanced';
+  const defaults = getProfileDefaults(profile);
+  const separation = {
+    profile,
+    separationStrength: parseNumber(args.separationStrength, defaults.separationStrength),
+    edgeThreshold: parseNumber(args.edgeThreshold, defaults.edgeThreshold),
+    skySmoothStrength: parseNumber(args.skySmoothStrength, defaults.skySmoothStrength),
+    skyFlatnessThreshold: parseNumber(args.skyFlatnessThreshold, defaults.skyFlatnessThreshold)
+  };
   const tone = {
-    blackPoint: Number(args.blackPoint ?? 0.08),
-    whitePoint: Number(args.whitePoint ?? 0.92),
-    outputGamma: Number(args.outputGamma ?? 1.2),
-    bloomStrength: Number(args.bloomStrength ?? 0.7),
-    phosphorStrength: Number(args.phosphorStrength ?? 0.82)
+    blackPoint: parseNumber(args.blackPoint, defaults.blackPoint),
+    whitePoint: parseNumber(args.whitePoint, defaults.whitePoint),
+    outputGamma: parseNumber(args.outputGamma, defaults.outputGamma),
+    bloomStrength: parseNumber(args.bloomStrength, defaults.bloomStrength),
+    phosphorStrength: parseNumber(args.phosphorStrength, 0.9)
   };
 
   mkdirSync(outDir, { recursive: true });
@@ -364,7 +452,7 @@ function main() {
       luma[i] = raw[offset + i] / 255;
     }
 
-    const effected = applyEffects(luma, cols, rows, preset, frameIndex, tone);
+    const effected = applyEffects(luma, cols, rows, preset, frameIndex, tone, separation);
     const frame = new Uint8Array(frameSize);
 
     for (let i = 0; i < frameSize; i += 1) {
@@ -423,6 +511,7 @@ function main() {
     keyframeEvery,
     effects: preset.postProcessing,
     tone,
+    separation,
     source: {
       width: videoInfo.width,
       height: videoInfo.height,
