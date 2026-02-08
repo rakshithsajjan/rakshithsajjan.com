@@ -8,7 +8,7 @@
   "charset": " .,:;irsXA253hMHGS#9B&@",
   "colorMode": "amber-phosphor",
   "tintColor": "#ffbf00",
-  "phosphorStrength": 0.72,
+  "phosphorStrength": 0.9,
   "backgroundColor": "#000000",
   "glyphAspect": 0.62,
   "videoAspect": 1.7777777777777777,
@@ -53,11 +53,11 @@
     }
   },
   "tone": {
-    "blackPoint": 0.13,
-    "whitePoint": 0.88,
-    "outputGamma": 1.42,
-    "bloomStrength": 0.52,
-    "phosphorStrength": 0.72
+    "blackPoint": 0.09,
+    "whitePoint": 0.94,
+    "outputGamma": 1.18,
+    "bloomStrength": 0.68,
+    "phosphorStrength": 0.9
   },
   "source": {
     "width": 1280,
