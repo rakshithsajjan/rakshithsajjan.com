@@ -231,7 +231,11 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const fontSize = Math.max(4, lineHeight);
 
     const rgb = hexToRgb(meta.tintColor || '#ffbf00');
-    const phosphorStrength = Math.min(1, Math.max(0.4, meta.phosphorStrength ?? 0.82));
+    const brightnessBoost = 1.2;
+    const phosphorStrength = Math.min(
+      1,
+      Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
+    );
     ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
     ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
     ctx.imageSmoothingEnabled = false;
