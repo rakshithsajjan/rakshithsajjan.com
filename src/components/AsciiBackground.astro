@@ -7,7 +7,7 @@ interface Props {
 
 const {
   manifestUrl = '/media/ascii-bike/manifest.json',
-  framesUrl = '/media/ascii-bike/frames.bin.br',
+  framesUrl = '/media/ascii-bike/frames.bin',
   posterUrl = '/media/ascii-bike/poster.txt'
 } = Astro.props as Props;
 ---
@@ -29,7 +29,7 @@ const {
   const node = document.querySelector('[data-ascii-bg]');
   if (node instanceof HTMLElement) {
     const manifestUrl = node.dataset.manifestUrl ?? '/media/ascii-bike/manifest.json';
-    const framesUrl = node.dataset.framesUrl ?? '/media/ascii-bike/frames.bin.br';
+    const framesUrl = node.dataset.framesUrl ?? '/media/ascii-bike/frames.bin';
     const posterUrl = node.dataset.posterUrl ?? '/media/ascii-bike/poster.txt';
 
     initAsciiPlayer({

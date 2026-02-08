@@ -431,6 +431,7 @@ function main() {
   };
 
   writeFileSync(resolve(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  writeFileSync(resolve(outDir, 'frames.bin'), encodedBuffer);
   writeFileSync(resolve(outDir, 'frames.bin.br'), compressed);
   writeFileSync(resolve(outDir, 'poster.txt'), poster + '\n', 'utf8');
 
