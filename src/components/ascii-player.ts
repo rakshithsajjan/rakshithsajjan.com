@@ -331,6 +331,11 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
           }
         }
 
+        if (frames.length >= meta.frameCount) {
+          reader.cancel();
+          break;
+        }
+
         if (cursor > 0) {
           buffer = buffer.slice(cursor);
         }

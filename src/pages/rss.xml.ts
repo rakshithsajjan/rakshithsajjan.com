@@ -27,7 +27,7 @@ const items = posts
   .filter((post) => post.pubDate)
   .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
-export const get = () =>
+export const GET = () =>
   rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
