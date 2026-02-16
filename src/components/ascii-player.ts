@@ -149,13 +149,13 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     autoplay = true
   } = options;
 
-  const canvas = container.querySelector('canvas') as HTMLCanvasElement;
-  const posterNode = container.querySelector('pre') as HTMLPreElement;
-  if (!canvas || !posterNode) {
+  const canvas = container.querySelector('canvas');
+  const posterNode = container.querySelector('pre');
+  if (!(canvas instanceof HTMLCanvasElement) || !(posterNode instanceof HTMLPreElement)) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
 
-  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+  const ctx = canvas.getContext('2d');
   if (!ctx) {
     throw new Error('Unable to get canvas context for ASCII player');
   }
@@ -170,6 +170,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
 
+  // Layout cache to avoid recalculating in every frame
   const layout = {
     width: 0,
     height: 0,
@@ -178,7 +179,6 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     offsetY: 0,
     lineHeight: 0,
     fontSize: 0,
-    cellWidth: 0,
     scaleX: 1,
     fillStyle: '',
     shadowColor: '',
@@ -186,6 +186,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     measuredGlyph: 0
   };
 
+  // Persistent buffer to reduce garbage collection
   let rowBuffer: string[] = [];
 
   const observer = new IntersectionObserver((entries) => {
@@ -209,18 +210,20 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   resizeObserver.observe(container);
 
   function showPoster(text: string) {
+    if (!posterNode || !canvas) return;
     posterNode.textContent = text;
     posterNode.hidden = false;
     canvas.hidden = true;
   }
 
   function showCanvas() {
+    if (!posterNode || !canvas) return;
     posterNode.hidden = true;
     canvas.hidden = false;
   }
 
   function updateLayout() {
-    if (!manifest) return;
+    if (!manifest || !canvas || !ctx) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
@@ -270,7 +273,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   }
 
   function drawFrame(frame: Uint8Array, meta: Manifest) {
-    if (layout.width < 1 || layout.height < 1) return;
+    if (!ctx || layout.width < 1 || layout.height < 1) return;
 
     ctx.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
     ctx.fillStyle = '#000000';

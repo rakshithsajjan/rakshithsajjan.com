@@ -6,19 +6,10 @@ import { marked } from 'marked';
 
 const contentDir = path.resolve('src/content/blog');
 const files = await fs.readdir(contentDir);
-
-type Post = {
-  title: string;
-  description: string;
-  pubDate: string;
-  content: string | Promise<string>;
-  url: string;
-};
-
-const posts: Post[] = await Promise.all(
+const posts = await Promise.all(
   files
-    .filter((file: string) => file.endsWith('.md'))
-    .map(async (file: string) => {
+    .filter((file) => file.endsWith('.md'))
+    .map(async (file) => {
       const slug = file.replace(/\.md$/, '');
       const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
       const { data, content } = matter(raw);
@@ -33,25 +24,19 @@ const posts: Post[] = await Promise.all(
 );
 
 const items = posts
-  .filter((post: Post) => post.pubDate)
-  .sort((a: Post, b: Post) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+  .filter((post) => post.pubDate)
+  .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
-export const GET = async () => {
-  const feed = await rss({
+export const get = () =>
+  rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
     site: 'https://rakshithsajjan.com',
-    items: items.map((post: Post) => ({
+    items: items.map((post) => ({
       title: post.title,
       link: post.url,
       description: post.description,
-      pubDate: new Date(post.pubDate),
-      content: post.content as string
+      pubDate: post.pubDate,
+      content: post.content
     }))
   });
-  return new Response(feed.body, {
-    headers: {
-      'Content-Type': 'application/xml; charset=utf-8'
-    }
-  });
-};
