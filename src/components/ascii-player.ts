@@ -35,55 +35,46 @@ function hexToRgb(hex: string) {
   };
 }
 
-async function fetchBytes(url: string): Promise<Uint8Array> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status}`);
-  }
-  const buffer = await response.arrayBuffer();
-  return new Uint8Array(buffer);
-}
-
-function decodeKeyframe(payload: Uint8Array, offset: number, frameSize: number) {
+function decodeKeyframeSafe(payload: Uint8Array, offset: number, frameSize: number) {
   const frame = new Uint8Array(frameSize);
   let i = 0;
   let cursor = offset;
 
-  while (i < frameSize && cursor < payload.length) {
+  while (i < frameSize) {
+    if (cursor >= payload.length) return null;
     const tag = payload[cursor++];
     const len = tag & 0x7f;
     const isLiteral = (tag & 0x80) !== 0;
 
     if (isLiteral) {
+      if (cursor + len > payload.length) return null;
       frame.set(payload.subarray(cursor, cursor + len), i);
       cursor += len;
       i += len;
-      continue;
+    } else {
+      if (cursor >= payload.length) return null;
+      const value = payload[cursor++];
+      frame.fill(value, i, i + len);
+      i += len;
     }
-
-    const value = payload[cursor++];
-    frame.fill(value, i, i + len);
-    i += len;
-  }
-
-  if (i !== frameSize) {
-    throw new Error('Keyframe decode failed due to incomplete payload');
   }
 
   return { frame, nextOffset: cursor };
 }
 
-function decodeDelta(payload: Uint8Array, offset: number, previous: Uint8Array) {
+function decodeDeltaSafe(payload: Uint8Array, offset: number, previous: Uint8Array) {
   const frame = previous.slice();
   let i = 0;
   let cursor = offset;
 
-  while (i < frame.length && cursor < payload.length) {
+  while (i < frame.length) {
+    if (cursor >= payload.length) return null;
     const tag = payload[cursor++];
     const len = tag & 0x7f;
     const changed = (tag & 0x80) !== 0;
 
     if (changed) {
+      if (cursor + len > payload.length) return null;
       frame.set(payload.subarray(cursor, cursor + len), i);
       cursor += len;
     }
@@ -91,44 +82,7 @@ function decodeDelta(payload: Uint8Array, offset: number, previous: Uint8Array) 
     i += len;
   }
 
-  if (i !== frame.length) {
-    throw new Error('Delta decode failed due to incomplete payload');
-  }
-
   return { frame, nextOffset: cursor };
-}
-
-function decodeFrames(payload: Uint8Array, manifest: Manifest) {
-  const frames: Uint8Array[] = [];
-  const frameSize = manifest.cols * manifest.rows;
-  let cursor = 0;
-  let previous: Uint8Array | null = null;
-
-  while (cursor < payload.length && frames.length < manifest.frameCount) {
-    const frameType = payload[cursor++];
-    if (frameType === 0 || !previous) {
-      const decoded = decodeKeyframe(payload, cursor, frameSize);
-      frames.push(decoded.frame);
-      previous = decoded.frame;
-      cursor = decoded.nextOffset;
-      continue;
-    }
-
-    if (frameType !== 1) {
-      throw new Error(`Unknown frame type: ${frameType}`);
-    }
-
-    const decoded = decodeDelta(payload, cursor, previous);
-    frames.push(decoded.frame);
-    previous = decoded.frame;
-    cursor = decoded.nextOffset;
-  }
-
-  if (frames.length !== manifest.frameCount) {
-    throw new Error(`Expected ${manifest.frameCount} frames, decoded ${frames.length}`);
-  }
-
-  return frames;
 }
 
 async function loadPoster(posterUrl: string) {
@@ -190,17 +144,20 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   resizeObserver.observe(container);
 
   function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
+    if (posterNode) {
+      posterNode.textContent = text;
+      posterNode.hidden = false;
+    }
+    if (canvas) canvas.hidden = true;
   }
 
   function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
+    if (posterNode) posterNode.hidden = true;
+    if (canvas) canvas.hidden = false;
   }
 
   function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (!canvas || !ctx) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
@@ -273,15 +230,23 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       if (elapsed >= frameStepMs) {
         const steps = Math.max(1, Math.floor(elapsed / frameStepMs));
         frameIndex += steps;
-        if (loop) {
-          frameIndex %= frames.length;
-        } else if (frameIndex >= frames.length) {
-          frameIndex = frames.length - 1;
-          running = false;
+
+        if (frameIndex >= frames.length) {
+          if (frames.length < manifest.frameCount) {
+            frameIndex = frames.length - 1;
+          } else if (loop) {
+            frameIndex %= frames.length;
+          } else {
+            frameIndex = frames.length - 1;
+            running = false;
+          }
         }
         lastTick = now;
       }
-      drawFrame(frames[frameIndex], manifest);
+
+      if (frames[frameIndex]) {
+        drawFrame(frames[frameIndex], manifest);
+      }
     }
 
     rafId = window.requestAnimationFrame(tick);
@@ -304,25 +269,87 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       if (!res.ok) throw new Error(`Failed to fetch ${manifestUrl}: ${res.status}`);
       return (await res.json()) as Manifest;
     }),
-    fetchBytes(framesUrl),
     loadPoster(posterUrl)
-  ]).then(([meta, payload, posterText]) => {
+  ]).then(([meta, posterText]) => {
+    if (isDestroyed) return;
     manifest = meta;
     frameStepMs = 1000 / Math.max(1, meta.fps || 15);
 
+    showPoster(posterText);
+
     if (reducedMotion.matches) {
-      showPoster(posterText);
       return;
     }
 
-    frames = decodeFrames(payload, meta);
-    showCanvas();
-    running = autoplay;
-    drawFrame(frames[0], meta);
+    fetch(framesUrl).then(async (response) => {
+      if (!response.body) throw new Error('ReadableStream not supported');
+      const reader = response.body.getReader();
+
+      let buffer = new Uint8Array(0);
+      let previous: Uint8Array | null = null;
+      const frameSize = meta.cols * meta.rows;
+
+      while (true) {
+        if (isDestroyed) {
+          reader.cancel();
+          break;
+        }
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const newBuffer = new Uint8Array(buffer.length + value.length);
+        newBuffer.set(buffer);
+        newBuffer.set(value, buffer.length);
+        buffer = newBuffer;
+
+        let cursor = 0;
+        while (cursor < buffer.length && frames.length < meta.frameCount) {
+          if (cursor + 1 > buffer.length) break;
+
+          const frameType = buffer[cursor];
+          const payloadOffset = cursor + 1;
+          let result: { frame: Uint8Array; nextOffset: number } | null = null;
+
+          if (frameType === 0 || !previous) {
+            result = decodeKeyframeSafe(buffer, payloadOffset, frameSize);
+          } else if (frameType === 1) {
+            result = decodeDeltaSafe(buffer, payloadOffset, previous);
+          } else {
+            console.warn(`Unknown frame type: ${frameType}`);
+            cursor = buffer.length;
+            break;
+          }
+
+          if (!result) break;
+
+          frames.push(result.frame);
+          previous = result.frame;
+          cursor = result.nextOffset;
+
+          if (frames.length === 1 && autoplay) {
+            showCanvas();
+            running = true;
+            drawFrame(frames[0], meta);
+          }
+        }
+
+        if (frames.length >= meta.frameCount) {
+          reader.cancel();
+          break;
+        }
+
+        if (cursor > 0) {
+          buffer = buffer.slice(cursor);
+        }
+      }
+    }).catch((error) => {
+      console.warn('ASCII player stream failed:', error);
+    });
   }).catch(async (error) => {
     console.warn('ASCII player fallback to poster:', error);
     const posterText = await loadPoster(posterUrl).catch(() => 'ASCII preview unavailable');
-    showPoster(posterText);
+    if (!isDestroyed) showPoster(posterText);
   });
 
   rafId = window.requestAnimationFrame(tick);
