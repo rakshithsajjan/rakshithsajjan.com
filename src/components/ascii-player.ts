@@ -149,13 +149,13 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     autoplay = true
   } = options;
 
-  const canvas = container.querySelector('canvas');
-  const posterNode = container.querySelector('pre');
-  if (!(canvas instanceof HTMLCanvasElement) || !(posterNode instanceof HTMLPreElement)) {
+  const canvas = container.querySelector('canvas') as HTMLCanvasElement;
+  const posterNode = container.querySelector('pre') as HTMLPreElement;
+  if (!canvas || !posterNode) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
 
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
   if (!ctx) {
     throw new Error('Unable to get canvas context for ASCII player');
   }
