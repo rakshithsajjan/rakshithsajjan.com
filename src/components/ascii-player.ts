@@ -144,17 +144,20 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   resizeObserver.observe(container);
 
   function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
+    if (posterNode) {
+      posterNode.textContent = text;
+      posterNode.hidden = false;
+    }
+    if (canvas) canvas.hidden = true;
   }
 
   function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
+    if (posterNode) posterNode.hidden = true;
+    if (canvas) canvas.hidden = false;
   }
 
   function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (!canvas || !ctx) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
