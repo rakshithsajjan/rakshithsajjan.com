@@ -1,0 +1,3 @@
+## 2025-05-15 - [Optimize Animation Render Loops]
+**Learning:** High-frequency animation loops (15+ FPS) in canvas applications are sensitive to redundant calculations and object allocations. Parsing hex colors, calculating container-relative offsets, and constructing font strings on every frame increases frame budget and triggers frequent garbage collection.
+**Action:** Encapsulate layout and manifest-dependent calculations into a dedicated update function triggered only by resize or initialization. Use persistent buffers (like `rowBuffer`) instead of creating new arrays every frame to minimize memory churn.

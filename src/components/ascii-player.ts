@@ -170,6 +170,24 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
 
+  const layout = {
+    width: 0,
+    height: 0,
+    dpr: 1,
+    offsetX: 0,
+    offsetY: 0,
+    lineHeight: 0,
+    fontSize: 0,
+    cellWidth: 0,
+    scaleX: 1,
+    fillStyle: '',
+    shadowColor: '',
+    font: '',
+    measuredGlyph: 0
+  };
+
+  let rowBuffer: string[] = [];
+
   const observer = new IntersectionObserver((entries) => {
     inViewport = entries[0]?.isIntersecting ?? true;
     if (!inViewport) {
@@ -184,7 +202,8 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   observer.observe(container);
 
   const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
+    updateLayout();
+    if (manifest && frames[frameIndex]) drawFrame(frames[frameIndex], manifest);
   });
 
   resizeObserver.observe(container);
@@ -200,7 +219,8 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     canvas.hidden = false;
   }
 
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  function updateLayout() {
+    if (!manifest) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
@@ -211,11 +231,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
-
-    const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
+    const targetAspect = manifest.videoAspect ?? ((manifest.cols * (manifest.glyphAspect ?? 0.62)) / manifest.rows);
     const containerAspect = width / height;
     let coverWidth = width;
     let coverHeight = height;
@@ -225,38 +241,58 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       coverWidth = height * targetAspect;
     }
 
-    const offsetX = (width - coverWidth) / 2;
-    const offsetY = (height - coverHeight) / 2;
-    const lineHeight = coverHeight / meta.rows;
-    const fontSize = Math.max(4, lineHeight);
+    layout.width = width;
+    layout.height = height;
+    layout.dpr = dpr;
+    layout.offsetX = (width - coverWidth) / 2;
+    layout.offsetY = (height - coverHeight) / 2;
+    layout.lineHeight = coverHeight / manifest.rows;
+    layout.fontSize = Math.max(4, layout.lineHeight);
 
-    const rgb = hexToRgb(meta.tintColor || '#ffbf00');
+    const rgb = hexToRgb(manifest.tintColor || '#ffbf00');
     const brightnessBoost = 1.2;
     const phosphorStrength = Math.min(
       1,
-      Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
+      Math.max(0.4, (manifest.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
-    ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    layout.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+    layout.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
+    layout.font = `${layout.fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+
+    ctx.font = layout.font;
+    layout.measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
+    const cellWidth = coverWidth / manifest.cols;
+    layout.scaleX = cellWidth / layout.measuredGlyph;
+
+    if (rowBuffer.length !== manifest.cols) {
+      rowBuffer = new Array(manifest.cols);
+    }
+  }
+
+  function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (layout.width < 1 || layout.height < 1) return;
+
+    ctx.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, layout.width, layout.height);
+
+    ctx.fillStyle = layout.fillStyle;
+    ctx.font = layout.font;
     ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
-    const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
-    const cellWidth = coverWidth / meta.cols;
-    const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
+    ctx.shadowColor = layout.shadowColor;
     ctx.shadowBlur = 4;
 
     const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
     ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scaleX, 1);
+    ctx.translate(layout.offsetX, layout.offsetY);
+    ctx.scale(layout.scaleX, 1);
     for (let y = 0; y < meta.rows; y += 1) {
       const rowStart = y * meta.cols;
       for (let x = 0; x < meta.cols; x += 1) {
         rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
       }
-      ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
+      ctx.fillText(rowBuffer.join(''), 0, y * layout.lineHeight);
     }
     ctx.restore();
   }
@@ -316,6 +352,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     }
 
     frames = decodeFrames(payload, meta);
+    updateLayout();
     showCanvas();
     running = autoplay;
     drawFrame(frames[0], meta);
