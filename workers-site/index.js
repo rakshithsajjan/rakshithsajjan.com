@@ -1,6 +1,8 @@
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 import manifestJSON from '__STATIC_CONTENT_MANIFEST';
-const manifest = JSON.parse(manifestJSON);
+
+// The manifest might be a string or an object depending on the environment/bundler
+const manifest = typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON;
 
 const baseRedirects = [
   { from: 'www.rakshithsajjan.com', to: 'rakshithsajjan.com' }
@@ -9,7 +11,9 @@ const baseRedirects = [
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const redirect = baseRedirects.find((rule) => rule.from === url.hostname.toLowerCase());
+    const hostname = url.hostname.toLowerCase();
+
+    const redirect = baseRedirects.find((rule) => rule.from === hostname);
     if (redirect) {
       const location = `https://${redirect.to}${url.pathname}${url.search}`;
       return Response.redirect(location, 301);
