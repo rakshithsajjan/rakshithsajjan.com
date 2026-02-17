@@ -21,6 +21,20 @@ type Manifest = {
   videoAspect?: number;
 };
 
+type RenderState = {
+  width: number;
+  height: number;
+  dpr: number;
+  offsetX: number;
+  offsetY: number;
+  lineHeight: number;
+  fontSize: number;
+  scaleX: number;
+  fillStyle: string;
+  shadowColor: string;
+  font: string;
+};
+
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '').trim();
   const full = normalized.length === 3
@@ -169,6 +183,14 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let frameIndex = 0;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
+  /**
+   * Performance Optimization: renderState
+   * Caches all layout-dependent calculations to avoid expensive DOM property lookups
+   * (like clientWidth/clientHeight) and redundant math in the high-frequency render loop.
+   */
+  let renderState: RenderState | null = null;
+  // Reusable buffer for string construction to reduce per-frame memory allocation and GC pressure.
+  let rowBuffer: string[] = [];
 
   const observer = new IntersectionObserver((entries) => {
     inViewport = entries[0]?.isIntersecting ?? true;
@@ -184,7 +206,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   observer.observe(container);
 
   const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
+    if (manifest) {
+      updateRenderState(manifest);
+      drawFrame(frames[frameIndex], manifest);
+    }
   });
 
   resizeObserver.observe(container);
@@ -200,20 +225,24 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     canvas.hidden = false;
   }
 
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
-    const width = container.clientWidth;
+  /**
+   * Performance Optimization: updateRenderState
+   * Concentrates layout-triggering lookups and font measurements here.
+   * This is called only when the component initializes or resizes.
+   */
+  function updateRenderState(meta: Manifest) {
+    const width = container.clientWidth; // Forced reflow (acceptable here, outside of animation loop)
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
+    if (!renderState || renderState.width !== width || renderState.height !== height || renderState.dpr !== dpr) {
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+    }
 
     const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
     const containerAspect = width / height;
@@ -236,18 +265,69 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       1,
       Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
-    ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.imageSmoothingEnabled = false;
-    ctx.textBaseline = 'top';
+
+    const fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+    const font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    const shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
+
+    ctx.font = font;
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
+
+    renderState = {
+      width,
+      height,
+      dpr,
+      offsetX,
+      offsetY,
+      lineHeight,
+      fontSize,
+      scaleX,
+      fillStyle,
+      shadowColor,
+      font
+    };
+
+    if (rowBuffer.length !== meta.cols) {
+      rowBuffer = new Array(meta.cols);
+    }
+  }
+
+  /**
+   * Performance Optimization: drawFrame
+   * The core animation loop. Optimized to be extremely lean:
+   * 1. Uses cached renderState to avoid layout-triggering property lookups.
+   * 2. Reuses rowBuffer to minimize object allocation.
+   */
+  function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (!renderState) return;
+
+    const {
+      width,
+      height,
+      dpr,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      fillStyle,
+      shadowColor,
+      font
+    } = renderState;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = fillStyle;
+    ctx.font = font;
+    ctx.imageSmoothingEnabled = false;
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = shadowColor;
     ctx.shadowBlur = 4;
 
     const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(scaleX, 1);
@@ -316,6 +396,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     }
 
     frames = decodeFrames(payload, meta);
+    updateRenderState(meta);
     showCanvas();
     running = autoplay;
     drawFrame(frames[0], meta);
