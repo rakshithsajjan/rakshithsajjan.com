@@ -1,24 +1,48 @@
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
+import manifestJSON from '__STATIC_CONTENT_MANIFEST';
+
+const ASSET_MANIFEST = typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON;
 
 const baseRedirects = [
   { from: 'www.rakshithsajjan.com', to: 'rakshithsajjan.com' }
 ];
 
-addEventListener('fetch', (event) => {
-  event.respondWith(handle(event));
-});
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const hostname = url.hostname.toLowerCase();
 
-async function handle(event) {
-  const url = new URL(event.request.url);
-  const redirect = baseRedirects.find((rule) => rule.from === url.hostname.toLowerCase());
-  if (redirect) {
-    const location = `https://${redirect.to}${url.pathname}${url.search}`;
-    return Response.redirect(location, 301);
-  }
+    const redirect = baseRedirects.find(r => r.from === hostname);
+    if (redirect) {
+      return Response.redirect(`https://${redirect.to}${url.pathname}${url.search}`, 301);
+    }
 
-  try {
-    return await getAssetFromKV(event);
-  } catch (error) {
-    return new Response('Not found', { status: 404 });
-  }
-}
+    const options = {
+      ASSET_NAMESPACE: env.__STATIC_CONTENT,
+      ASSET_MANIFEST,
+    };
+
+    try {
+      return await getAssetFromKV(
+        {
+          request,
+          waitUntil: ctx.waitUntil.bind(ctx),
+        },
+        options
+      );
+    } catch (e) {
+      try {
+        const notFoundResponse = await getAssetFromKV(
+          {
+            request: new Request(`${url.origin}/404.html`, request),
+            waitUntil: ctx.waitUntil.bind(ctx),
+          },
+          options
+        );
+        return new Response(notFoundResponse.body, { ...notFoundResponse, status: 404 });
+      } catch (e) {}
+
+      return new Response('Not Found', { status: 404 });
+    }
+  },
+};
