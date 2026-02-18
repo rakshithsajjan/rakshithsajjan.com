@@ -1,0 +1,3 @@
+## 2025-05-15 - [Optimization of High-Frequency Canvas Render Loop]
+**Learning:** In canvas-based components running at 30-60 FPS (like the ASCII player), performing DOM-like measurements (getBoundingClientRect), font setting, and color string parsing inside the `requestAnimationFrame` callback creates significant CPU overhead and layout thrashing. Additionally, allocating temporary buffers (e.g., `new Uint8Array`) every frame causes high garbage collection churn.
+**Action:** Move all layout, style, and buffer allocation logic to a separate `recalculateLayout` function triggered only by resize events or initialization. Use a persistent state object and pre-allocated buffers in the hot `drawFrame` path.
