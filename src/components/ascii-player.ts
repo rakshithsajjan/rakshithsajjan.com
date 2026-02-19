@@ -160,7 +160,20 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     throw new Error('Unable to get canvas context for ASCII player');
   }
 
+  type LayoutState = {
+    width: number;
+    height: number;
+    offsetX: number;
+    offsetY: number;
+    lineHeight: number;
+    scaleX: number;
+    fillStyle: string;
+    shadowColor: string;
+    font: string;
+  };
+
   let manifest: Manifest | null = null;
+  let layoutState: LayoutState | null = null;
   let frames: Uint8Array[] = [];
   let running = false;
   let isVisible = true;
@@ -169,6 +182,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let frameIndex = 0;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
+  let rowBuffer: string[] = [];
 
   const observer = new IntersectionObserver((entries) => {
     inViewport = entries[0]?.isIntersecting ?? true;
@@ -184,38 +198,47 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   observer.observe(container);
 
   const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
+    updateLayout();
+    if (manifest && frames[frameIndex]) {
+      drawFrame(frames[frameIndex]);
+    }
   });
 
   resizeObserver.observe(container);
 
   function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
+    if (posterNode) posterNode.textContent = text;
+    if (posterNode) posterNode.hidden = false;
+    if (canvas) canvas.hidden = true;
   }
 
   function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
+    if (posterNode) posterNode.hidden = true;
+    if (canvas) canvas.hidden = false;
   }
 
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  /**
+   * Caches layout calculations to minimize CPU overhead in the animation loop.
+   */
+  function updateLayout() {
+    if (!manifest || !ctx || !canvas) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    const canvasWidth = Math.floor(width * dpr);
+    const canvasHeight = Math.floor(height * dpr);
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
+    // Only update canvas dimensions if they changed to avoid clearing the buffer
+    if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+    }
 
-    const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
+    const targetAspect = manifest.videoAspect ?? ((manifest.cols * (manifest.glyphAspect ?? 0.62)) / manifest.rows);
     const containerAspect = width / height;
     let coverWidth = width;
     let coverHeight = height;
@@ -227,33 +250,76 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
     const offsetX = (width - coverWidth) / 2;
     const offsetY = (height - coverHeight) / 2;
-    const lineHeight = coverHeight / meta.rows;
+    const lineHeight = coverHeight / manifest.rows;
     const fontSize = Math.max(4, lineHeight);
 
-    const rgb = hexToRgb(meta.tintColor || '#ffbf00');
+    const rgb = hexToRgb(manifest.tintColor || '#ffbf00');
     const brightnessBoost = 1.2;
     const phosphorStrength = Math.min(
       1,
-      Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
+      Math.max(0.4, (manifest.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
-    ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+
+    // Pre-calculate context settings
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
+
+    const font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    ctx.font = font;
+
+    // Cache glyph measurement - this is an expensive call
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
-    const cellWidth = coverWidth / meta.cols;
+    const cellWidth = coverWidth / manifest.cols;
     const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
+
+    layoutState = {
+      width,
+      height,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      fillStyle: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`,
+      shadowColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`,
+      font
+    };
+  }
+
+  /**
+   * Draws a single frame using cached layout state.
+   */
+  function drawFrame(frame: Uint8Array) {
+    if (!layoutState || !manifest || !ctx) return;
+
+    const {
+      width,
+      height,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      fillStyle,
+      shadowColor,
+      font
+    } = layoutState;
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = fillStyle;
+    ctx.font = font;
+    ctx.shadowColor = shadowColor;
     ctx.shadowBlur = 4;
 
-    const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
+    const chars = manifest.charset;
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(scaleX, 1);
-    for (let y = 0; y < meta.rows; y += 1) {
-      const rowStart = y * meta.cols;
-      for (let x = 0; x < meta.cols; x += 1) {
+
+    for (let y = 0; y < manifest.rows; y += 1) {
+      const rowStart = y * manifest.cols;
+      for (let x = 0; x < manifest.cols; x += 1) {
         rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
       }
       ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
@@ -272,6 +338,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       const elapsed = now - lastTick;
       if (elapsed >= frameStepMs) {
         const steps = Math.max(1, Math.floor(elapsed / frameStepMs));
+        const prevIndex = frameIndex;
         frameIndex += steps;
         if (loop) {
           frameIndex %= frames.length;
@@ -280,8 +347,14 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
           running = false;
         }
         lastTick = now;
+
+        // Optimization: Only draw if the frame index actually changed.
+        // This avoids redundant work when the display refresh rate (e.g., 60Hz)
+        // is higher than the video frame rate (e.g., 15fps).
+        if (frameIndex !== prevIndex) {
+          drawFrame(frames[frameIndex]);
+        }
       }
-      drawFrame(frames[frameIndex], manifest);
     }
 
     rafId = window.requestAnimationFrame(tick);
@@ -309,6 +382,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   ]).then(([meta, payload, posterText]) => {
     manifest = meta;
     frameStepMs = 1000 / Math.max(1, meta.fps || 15);
+    rowBuffer = new Array(meta.cols);
 
     if (reducedMotion.matches) {
       showPoster(posterText);
@@ -317,8 +391,9 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
     frames = decodeFrames(payload, meta);
     showCanvas();
+    updateLayout();
     running = autoplay;
-    drawFrame(frames[0], meta);
+    drawFrame(frames[0]);
   }).catch(async (error) => {
     console.warn('ASCII player fallback to poster:', error);
     const posterText = await loadPoster(posterUrl).catch(() => 'ASCII preview unavailable');
