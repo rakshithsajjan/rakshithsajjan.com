@@ -1,0 +1,3 @@
+## 2025-02-20 - [Optimizing ASCII player render loop]
+**Learning:** High-frequency animation loops (like the ASCII video player) can be a major source of CPU waste if they perform redundant layout calculations or expensive DOM/Canvas API calls (like setting `canvas.width`) on every frame, especially when the source content frame rate is lower than the browser's refresh rate (e.g., 15 FPS vs 60 FPS).
+**Action:** Always decouple content updates from browser refresh rate using state tracking (`lastRenderedFrameIndex`). Cache layout-dependent values and only recompute/re-apply them when dimensions or device pixel ratio actually change. Reuse buffers to minimize garbage collection in the loop.

@@ -169,51 +169,30 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let frameIndex = 0;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
+  let lastRenderedFrameIndex = -1;
+  let needsRepaint = false;
 
-  const observer = new IntersectionObserver((entries) => {
-    inViewport = entries[0]?.isIntersecting ?? true;
-    if (!inViewport) {
-      running = false;
-      return;
-    }
-    if (autoplay && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      running = true;
-    }
-  }, { threshold: 0.1 });
+  type RenderState = {
+    width: number;
+    height: number;
+    dpr: number;
+    fontSize: number;
+    lineHeight: number;
+    offsetX: number;
+    offsetY: number;
+    scaleX: number;
+    tintColor: string;
+    shadowColor: string;
+  };
 
-  observer.observe(container);
+  let renderState: RenderState | null = null;
+  let rowBuffer: string[] = [];
 
-  const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
-  });
-
-  resizeObserver.observe(container);
-
-  function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
-  }
-
-  function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
-  }
-
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  function updateLayout(meta: Manifest) {
     const width = container.clientWidth;
     const height = container.clientHeight;
-    if (width < 1 || height < 1) return;
-
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
+    if (width < 1 || height < 1) return;
 
     const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
     const containerAspect = width / height;
@@ -236,29 +215,113 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       1,
       Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
-    ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.imageSmoothingEnabled = false;
-    ctx.textBaseline = 'top';
-    const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
+
+    // Initial font set for measurement
+    ctx!.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    const measuredGlyph = Math.max(0.0001, ctx!.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
-    ctx.shadowBlur = 4;
+
+    renderState = {
+      width,
+      height,
+      dpr,
+      fontSize,
+      lineHeight,
+      offsetX,
+      offsetY,
+      scaleX,
+      tintColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`,
+      shadowColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`
+    };
+
+    const targetCanvasWidth = Math.floor(width * dpr);
+    const targetCanvasHeight = Math.floor(height * dpr);
+
+    if (canvas!.width !== targetCanvasWidth || canvas!.height !== targetCanvasHeight) {
+      canvas!.width = targetCanvasWidth;
+      canvas!.height = targetCanvasHeight;
+      canvas!.style.width = `${width}px`;
+      canvas!.style.height = `${height}px`;
+    }
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    inViewport = entries[0]?.isIntersecting ?? true;
+    if (!inViewport) {
+      running = false;
+      return;
+    }
+    if (autoplay && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      running = true;
+    }
+  }, { threshold: 0.1 });
+
+  observer.observe(container);
+
+  const resizeObserver = new ResizeObserver(() => {
+    needsRepaint = true;
+  });
+
+  resizeObserver.observe(container);
+
+  function showPoster(text: string) {
+    posterNode!.textContent = text;
+    posterNode!.hidden = false;
+    canvas!.hidden = true;
+  }
+
+  function showCanvas() {
+    posterNode!.hidden = true;
+    canvas!.hidden = false;
+  }
+
+  function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (!renderState || needsRepaint) {
+      updateLayout(meta);
+    }
+    if (!renderState) return;
+
+    const {
+      width,
+      height,
+      dpr,
+      fontSize,
+      lineHeight,
+      offsetX,
+      offsetY,
+      scaleX,
+      tintColor,
+      shadowColor
+    } = renderState;
+
+    ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx!.fillStyle = '#000000';
+    ctx!.fillRect(0, 0, width, height);
+
+    ctx!.fillStyle = tintColor;
+    ctx!.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    ctx!.imageSmoothingEnabled = false;
+    ctx!.textBaseline = 'top';
+    ctx!.shadowColor = shadowColor;
+    ctx!.shadowBlur = 4;
 
     const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scaleX, 1);
+    if (rowBuffer.length !== meta.cols) {
+      rowBuffer = new Array(meta.cols);
+    }
+
+    ctx!.save();
+    ctx!.translate(offsetX, offsetY);
+    ctx!.scale(scaleX, 1);
     for (let y = 0; y < meta.rows; y += 1) {
       const rowStart = y * meta.cols;
       for (let x = 0; x < meta.cols; x += 1) {
         rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
       }
-      ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
+      ctx!.fillText(rowBuffer.join(''), 0, y * lineHeight);
     }
-    ctx.restore();
+    ctx!.restore();
   }
 
   function tick(now: number) {
@@ -267,21 +330,29 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       return;
     }
 
-    if (running && isVisible && inViewport) {
-      if (!lastTick) lastTick = now;
-      const elapsed = now - lastTick;
-      if (elapsed >= frameStepMs) {
-        const steps = Math.max(1, Math.floor(elapsed / frameStepMs));
-        frameIndex += steps;
-        if (loop) {
-          frameIndex %= frames.length;
-        } else if (frameIndex >= frames.length) {
-          frameIndex = frames.length - 1;
-          running = false;
+    if (isVisible && inViewport) {
+      if (running) {
+        if (!lastTick) lastTick = now;
+        const elapsed = now - lastTick;
+        if (elapsed >= frameStepMs) {
+          const steps = Math.max(1, Math.floor(elapsed / frameStepMs));
+          frameIndex += steps;
+          if (loop) {
+            frameIndex %= frames.length;
+          } else if (frameIndex >= frames.length) {
+            frameIndex = frames.length - 1;
+            running = false;
+          }
+          lastTick = now;
         }
-        lastTick = now;
       }
-      drawFrame(frames[frameIndex], manifest);
+
+      // Render if frame changed or layout needs repaint
+      if (frameIndex !== lastRenderedFrameIndex || needsRepaint) {
+        drawFrame(frames[frameIndex], manifest);
+        lastRenderedFrameIndex = frameIndex;
+        needsRepaint = false;
+      }
     }
 
     rafId = window.requestAnimationFrame(tick);
