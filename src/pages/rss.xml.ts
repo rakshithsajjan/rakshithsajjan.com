@@ -27,11 +27,11 @@ const items = posts
   .filter((post) => post.pubDate)
   .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
-export const get = () =>
-  rss({
+export async function GET(context: any) {
+  const res = (await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
-    site: 'https://rakshithsajjan.com',
+    site: context.site,
     items: items.map((post) => ({
       title: post.title,
       link: post.url,
@@ -39,4 +39,11 @@ export const get = () =>
       pubDate: post.pubDate,
       content: post.content
     }))
+  })) as any;
+  return new Response(res.body, {
+    headers: {
+      'Content-Type': 'application/xml',
+      ...res.headers
+    }
   });
+}
