@@ -15,6 +15,7 @@ export default {
     }
 
     try {
+      const manifest = typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON;
       return await getAssetFromKV(
         {
           request,
@@ -22,7 +23,7 @@ export default {
         },
         {
           ASSETS: env.__STATIC_CONTENT,
-          manifest: JSON.parse(manifestJSON),
+          manifest,
         }
       );
     } catch (error) {

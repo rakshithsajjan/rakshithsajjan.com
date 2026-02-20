@@ -17,7 +17,7 @@ const posts = await Promise.all(
         title: data.title,
         description: data.description,
         pubDate: data.pubDate,
-        content: marked(content),
+        content: await marked.parse(content),
         url: `/blog/${slug}`
       };
     })
@@ -28,7 +28,7 @@ const items = posts
   .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
 export async function GET(context: any) {
-  const res = (await rss({
+  const res = await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
     site: context.site,
@@ -37,13 +37,12 @@ export async function GET(context: any) {
       link: post.url,
       description: post.description,
       pubDate: post.pubDate,
-      content: post.content
+      content: post.content as string
     }))
-  })) as any;
+  });
   return new Response(res.body, {
     headers: {
       'Content-Type': 'application/xml',
-      ...res.headers
     }
   });
 }
