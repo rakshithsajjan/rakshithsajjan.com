@@ -13,11 +13,12 @@ const posts = await Promise.all(
       const slug = file.replace(/\.md$/, '');
       const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
       const { data, content } = matter(raw);
+      const htmlContent = await marked.parse(content);
       return {
-        title: data.title,
-        description: data.description,
-        pubDate: data.pubDate,
-        content: await marked.parse(content),
+        title: data.title as string,
+        description: data.description as string,
+        pubDate: data.pubDate as Date,
+        content: htmlContent as string,
         url: `/blog/${slug}`
       };
     })
@@ -28,7 +29,7 @@ const items = posts
   .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
 export async function GET(context: any) {
-  const res = await rss({
+  const rssResponse = (await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
     site: context.site,
@@ -37,10 +38,15 @@ export async function GET(context: any) {
       link: post.url,
       description: post.description,
       pubDate: post.pubDate,
-      content: post.content as string
+      content: post.content
     }))
-  });
-  return new Response(res.body, {
+  })) as any;
+
+  if (rssResponse instanceof Response) {
+    return rssResponse;
+  }
+
+  return new Response(rssResponse.body, {
     headers: {
       'Content-Type': 'application/xml',
     }
