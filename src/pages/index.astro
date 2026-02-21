@@ -9,9 +9,9 @@ const posts = Object.entries(postModules).map(([file, module]: [string, any]) =>
   const slug = file.split('/').pop()?.replace(/\.md$/, '') ?? '';
   return {
     slug,
-    url: module.url ?? `/blog/${slug}`,
-    frontmatter: module.frontmatter ?? module.default?.frontmatter,
-    component: module.default
+    url: (module as any).url ?? `/blog/${slug}`,
+    frontmatter: (module as any).frontmatter ?? (module as any).default?.frontmatter,
+    component: (module as any).default
   };
 });
 

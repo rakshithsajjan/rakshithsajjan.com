@@ -4,13 +4,13 @@
   <div class="search-results" id="search-results" aria-live="polite"></div>
 </section>
 
-<script type="module">
+<script>
   const fetchIndex = async () => {
     const response = await fetch('/search-index.json');
     return response.ok ? response.json() : [];
   };
 
-  const renderResults = (results) => {
+  const renderResults = (results: any[]) => {
     const container = document.getElementById('search-results');
     if (!container) return;
     container.innerHTML = '';
@@ -20,7 +20,7 @@
     }
 
     const fragment = document.createDocumentFragment();
-    results.slice(0, 5).forEach((item) => {
+    results.slice(0, 5).forEach((item: any) => {
       const card = document.createElement('div');
       card.className = 'search-card';
       card.innerHTML = `
@@ -33,15 +33,15 @@
   };
 
   fetchIndex().then((posts) => {
-    const input = document.getElementById('search-input');
+    const input = document.getElementById('search-input') as HTMLInputElement;
     if (!input) return;
-    const search = (query) => {
+    const search = (query: string) => {
       const normalized = query.trim().toLowerCase();
       if (!normalized) {
         renderResults(posts);
         return;
       }
-      const filtered = posts.filter((post) => {
+      const filtered = posts.filter((post: any) => {
         const haystack = [post.title, post.description, ...(post.tags || [])].join(' ').toLowerCase();
         return haystack.includes(normalized);
       });
@@ -49,7 +49,8 @@
     };
 
     input.addEventListener('input', (event) => {
-      search(event.target.value);
+      const target = event.target as HTMLInputElement;
+      search(target.value);
     });
 
     renderResults(posts);
