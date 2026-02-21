@@ -13,11 +13,12 @@ const posts = await Promise.all(
       const slug = file.replace(/\.md$/, '');
       const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
       const { data, content } = matter(raw);
+      const parsedContent = await marked.parse(content);
       return {
         title: data.title,
         description: data.description,
         pubDate: data.pubDate,
-        content: marked(content),
+        content: parsedContent,
         url: `/blog/${slug}`
       };
     })
@@ -37,7 +38,7 @@ export const GET = async () => {
       link: post.url,
       description: post.description,
       pubDate: post.pubDate,
-      content: post.content as string
+      content: post.content
     }))
   });
   return new Response(response.body, {
