@@ -191,10 +191,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     if (width < 1 || height < 1) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    canvas!.width = Math.floor(width * dpr);
+    canvas!.height = Math.floor(height * dpr);
+    canvas!.style.width = `${width}px`;
+    canvas!.style.height = `${height}px`;
 
     const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
     const containerAspect = width / height;
@@ -266,14 +266,14 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   resizeObserver.observe(container);
 
   function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
+    posterNode!.textContent = text;
+    posterNode!.hidden = false;
+    canvas!.hidden = true;
   }
 
   function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
+    posterNode!.hidden = true;
+    canvas!.hidden = false;
   }
 
   function drawFrame(frame: Uint8Array, meta: Manifest) {
