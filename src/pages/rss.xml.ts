@@ -17,7 +17,7 @@ const posts = await Promise.all(
         title: data.title,
         description: data.description,
         pubDate: data.pubDate,
-        content: await marked(content),
+        content: await marked.parse(content),
         url: `/blog/${slug}`
       };
     })

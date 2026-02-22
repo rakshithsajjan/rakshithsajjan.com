@@ -8,21 +8,24 @@ const baseRedirects = [
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const redirect = baseRedirects.find((rule) => rule.from === url.hostname.toLowerCase());
+    const hostname = url.hostname.toLowerCase();
+
+    const redirect = baseRedirects.find((rule) => rule.from === hostname);
     if (redirect) {
       const location = `https://${redirect.to}${url.pathname}${url.search}`;
       return Response.redirect(location, 301);
     }
 
     try {
+      const assetManifest = typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON;
       return await getAssetFromKV(
         {
           request,
-          waitUntil: ctx.waitUntil.bind(ctx),
+          waitUntil: (promise) => ctx.waitUntil(promise),
         },
         {
           ASSET_NAMESPACE: env.__STATIC_CONTENT,
-          ASSET_MANIFEST: manifestJSON,
+          ASSET_MANIFEST: assetManifest,
         }
       );
     } catch (e) {
