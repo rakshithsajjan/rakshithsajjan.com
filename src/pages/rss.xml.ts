@@ -4,39 +4,41 @@ import path from 'path';
 import matter from 'gray-matter';
 import { marked } from 'marked';
 
-const contentDir = path.resolve('src/content/blog');
-const files = await fs.readdir(contentDir);
-const posts = await Promise.all(
-  files
-    .filter((file) => file.endsWith('.md'))
-    .map(async (file) => {
-      const slug = file.replace(/\.md$/, '');
-      const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
-      const { data, content } = matter(raw);
-      return {
-        title: data.title as string,
-        description: data.description as string,
-        pubDate: data.pubDate as string,
-        content: marked.parse(content) as string,
-        url: `/blog/${slug}`
-      };
-    })
-);
+import type { APIRoute } from 'astro';
 
-const items = posts
-  .filter((post) => post.pubDate)
-  .sort((a: any, b: any) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+export const GET: APIRoute = async (context) => {
+  const contentDir = path.resolve('src/content/blog');
+  const files = await fs.readdir(contentDir);
+  const posts = await Promise.all(
+    files
+      .filter((file) => file.endsWith('.md'))
+      .map(async (file) => {
+        const slug = file.replace(/\.md$/, '');
+        const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
+        const { data, content } = matter(raw);
+        return {
+          title: data.title as string,
+          description: data.description as string,
+          pubDate: data.pubDate as string,
+          content: await marked.parse(content),
+          url: `/blog/${slug}`
+        };
+      })
+  );
 
-export const GET = async () => {
+  const items = posts
+    .filter((post) => post.pubDate)
+    .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+
   const res = await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
-    site: 'https://rakshithsajjan.com',
-    items: items.map((post: any) => ({
+    site: context.site?.toString() || 'https://rakshithsajjan.com',
+    items: items.map((post) => ({
       title: post.title,
       link: post.url,
       description: post.description,
-      pubDate: post.pubDate,
+      pubDate: new Date(post.pubDate),
       content: post.content
     }))
   });
