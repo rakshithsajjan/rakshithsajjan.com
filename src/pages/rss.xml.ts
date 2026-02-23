@@ -14,10 +14,10 @@ const posts = await Promise.all(
       const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
       const { data, content } = matter(raw);
       return {
-        title: data.title,
-        description: data.description,
-        pubDate: data.pubDate,
-        content: marked(content),
+        title: data.title as string,
+        description: data.description as string,
+        pubDate: data.pubDate as string,
+        content: marked.parse(content) as string,
         url: `/blog/${slug}`
       };
     })
@@ -25,14 +25,14 @@ const posts = await Promise.all(
 
 const items = posts
   .filter((post) => post.pubDate)
-  .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+  .sort((a: any, b: any) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
 export const GET = async () => {
   const res = await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
     site: 'https://rakshithsajjan.com',
-    items: items.map((post) => ({
+    items: items.map((post: any) => ({
       title: post.title,
       link: post.url,
       description: post.description,
