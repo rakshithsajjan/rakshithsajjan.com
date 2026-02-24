@@ -155,18 +155,34 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
 
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) {
     throw new Error('Unable to get canvas context for ASCII player');
   }
 
+  type RenderState = {
+    width: number;
+    height: number;
+    dpr: number;
+    offsetX: number;
+    offsetY: number;
+    lineHeight: number;
+    scaleX: number;
+    fillStyle: string;
+    font: string;
+    shadowColor: string;
+    rowBuffer: string[];
+  };
+
   let manifest: Manifest | null = null;
   let frames: Uint8Array[] = [];
+  let renderState: RenderState | null = null;
   let running = false;
   let isVisible = true;
   let inViewport = true;
   let rafId = 0;
   let frameIndex = 0;
+  let lastRenderedFrame = -1;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
 
@@ -183,39 +199,24 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
   observer.observe(container);
 
-  const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
-  });
-
-  resizeObserver.observe(container);
-
-  function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
-  }
-
-  function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
-  }
-
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  function updateRenderState() {
+    if (!manifest) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    const canvasWidth = Math.floor(width * dpr);
+    const canvasHeight = Math.floor(height * dpr);
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
+    if (canvas!.width !== canvasWidth || canvas!.height !== canvasHeight) {
+      canvas!.width = canvasWidth;
+      canvas!.height = canvasHeight;
+      canvas!.style.width = `${width}px`;
+      canvas!.style.height = `${height}px`;
+    }
 
-    const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
+    const targetAspect = manifest.videoAspect ?? ((manifest.cols * (manifest.glyphAspect ?? 0.62)) / manifest.rows);
     const containerAspect = width / height;
     let coverWidth = width;
     let coverHeight = height;
@@ -227,38 +228,102 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
     const offsetX = (width - coverWidth) / 2;
     const offsetY = (height - coverHeight) / 2;
-    const lineHeight = coverHeight / meta.rows;
+    const lineHeight = coverHeight / manifest.rows;
     const fontSize = Math.max(4, lineHeight);
 
-    const rgb = hexToRgb(meta.tintColor || '#ffbf00');
+    const rgb = hexToRgb(manifest.tintColor || '#ffbf00');
     const brightnessBoost = 1.2;
     const phosphorStrength = Math.min(
       1,
-      Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
+      Math.max(0.4, (manifest.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
-    ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.imageSmoothingEnabled = false;
-    ctx.textBaseline = 'top';
-    const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
-    const cellWidth = coverWidth / meta.cols;
-    const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
-    ctx.shadowBlur = 4;
 
-    const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scaleX, 1);
-    for (let y = 0; y < meta.rows; y += 1) {
-      const rowStart = y * meta.cols;
-      for (let x = 0; x < meta.cols; x += 1) {
+    const font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    ctx!.font = font;
+    ctx!.textBaseline = 'top';
+    const measuredGlyph = Math.max(0.0001, ctx!.measureText('M').width);
+    const cellWidth = coverWidth / manifest.cols;
+    const scaleX = cellWidth / measuredGlyph;
+
+    renderState = {
+      width,
+      height,
+      dpr,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      fillStyle: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`,
+      font,
+      shadowColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`,
+      rowBuffer: new Array(manifest.cols)
+    };
+  }
+
+  const resizeObserver = new ResizeObserver(() => {
+    updateRenderState();
+    drawFrame(true);
+  });
+
+  resizeObserver.observe(container);
+
+  function showPoster(text: string) {
+    posterNode!.textContent = text;
+    posterNode!.hidden = false;
+    canvas!.hidden = true;
+  }
+
+  function showCanvas() {
+    posterNode!.hidden = true;
+    canvas!.hidden = false;
+  }
+
+  function drawFrame(force = false) {
+    if (!manifest || !renderState || frames.length === 0) return;
+    if (!force && frameIndex === lastRenderedFrame) return;
+
+    const {
+      width,
+      height,
+      dpr,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      fillStyle,
+      font,
+      shadowColor,
+      rowBuffer
+    } = renderState;
+
+    ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx!.fillStyle = '#000000';
+    ctx!.fillRect(0, 0, width, height);
+
+    ctx!.fillStyle = fillStyle;
+    ctx!.font = font;
+    ctx!.textBaseline = 'top';
+    ctx!.shadowColor = shadowColor;
+    ctx!.shadowBlur = 4;
+    ctx!.imageSmoothingEnabled = false;
+
+    const frame = frames[frameIndex];
+    const chars = manifest.charset;
+    const { cols, rows } = manifest;
+
+    ctx!.save();
+    ctx!.translate(offsetX, offsetY);
+    ctx!.scale(scaleX, 1);
+    for (let y = 0; y < rows; y += 1) {
+      const rowStart = y * cols;
+      for (let x = 0; x < cols; x += 1) {
         rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
       }
-      ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
+      ctx!.fillText(rowBuffer.join(''), 0, y * lineHeight);
     }
-    ctx.restore();
+    ctx!.restore();
+
+    lastRenderedFrame = frameIndex;
   }
 
   function tick(now: number) {
@@ -280,8 +345,8 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
           running = false;
         }
         lastTick = now;
+        drawFrame();
       }
-      drawFrame(frames[frameIndex], manifest);
     }
 
     rafId = window.requestAnimationFrame(tick);
@@ -317,8 +382,9 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
     frames = decodeFrames(payload, meta);
     showCanvas();
+    updateRenderState();
     running = autoplay;
-    drawFrame(frames[0], meta);
+    drawFrame(true);
   }).catch(async (error) => {
     console.warn('ASCII player fallback to poster:', error);
     const posterText = await loadPoster(posterUrl).catch(() => 'ASCII preview unavailable');
