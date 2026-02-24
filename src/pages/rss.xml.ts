@@ -29,7 +29,7 @@ export const GET = async () => {
     .filter((post) => post.pubDate)
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
-  const rssResult = await rss({
+  const rssFeed = await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
     site: 'https://rakshithsajjan.com',
@@ -37,12 +37,12 @@ export const GET = async () => {
       title: post.title,
       link: post.url,
       description: post.description,
-      pubDate: post.pubDate,
+      pubDate: new Date(post.pubDate),
       content: post.content
     }))
   });
 
-  return new Response(rssResult.body, {
+  return new Response(rssFeed.body, {
     headers: {
       'Content-Type': 'application/xml; charset=utf-8'
     }
