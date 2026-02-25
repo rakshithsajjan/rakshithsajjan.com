@@ -13,11 +13,12 @@ const posts = await Promise.all(
       const slug = file.replace(/\.md$/, '');
       const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
       const { data, content } = matter(raw);
+      const postContent = marked(content);
       return {
         title: data.title,
         description: data.description,
         pubDate: data.pubDate,
-        content: marked(content),
+        content: typeof postContent === 'string' ? postContent : await postContent,
         url: `/blog/${slug}`
       };
     })
