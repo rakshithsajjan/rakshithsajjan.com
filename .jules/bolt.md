@@ -1,0 +1,3 @@
+## 2025-05-15 - ASCII Player Layout Caching
+**Learning:** High-frequency animation loops (15+ FPS) using Canvas should cache all layout metrics, font strings, and color strings. Recalculating these every frame, even if they haven't changed, causes significant CPU overhead and layout thrashing in some browsers. Decoupling the source FPS (15) from the display refresh rate (60/120) by using a frame-index guard prevents redundant draws.
+**Action:** Always introduce a structured RenderState or similar caching mechanism for Canvas-based animations and use a lastRenderedFrameIndex check to skip identical frames.

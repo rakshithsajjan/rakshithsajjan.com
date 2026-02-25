@@ -13,11 +13,12 @@ const posts = await Promise.all(
       const slug = file.replace(/\.md$/, '');
       const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
       const { data, content } = matter(raw);
+      const postContent = marked(content);
       return {
         title: data.title,
         description: data.description,
         pubDate: data.pubDate,
-        content: marked(content),
+        content: typeof postContent === 'string' ? postContent : await postContent,
         url: `/blog/${slug}`
       };
     })
@@ -27,8 +28,8 @@ const items = posts
   .filter((post) => post.pubDate)
   .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
-export const get = () =>
-  rss({
+export const GET = async () => {
+  const rssResponse = await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
     site: 'https://rakshithsajjan.com',
@@ -40,3 +41,10 @@ export const get = () =>
       content: post.content
     }))
   });
+
+  return new Response(rssResponse.body, {
+    headers: {
+      'Content-Type': 'application/xml; charset=utf-8'
+    }
+  });
+};
