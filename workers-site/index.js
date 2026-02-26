@@ -10,10 +10,11 @@ addEventListener('fetch', (event) => {
 
 async function handle(event) {
   const url = new URL(event.request.url);
-  const redirect = baseRedirects.find((rule) => rule.from === url.hostname.toLowerCase());
+  const hostname = url.hostname.toLowerCase();
+  const redirect = baseRedirects.find((rule) => hostname === rule.from);
+
   if (redirect) {
-    const location = `https://${redirect.to}${url.pathname}${url.search}`;
-    return Response.redirect(location, 301);
+    return Response.redirect(`https://${redirect.to}${url.pathname}${url.search}`, 301);
   }
 
   try {
