@@ -19,7 +19,13 @@ export default {
         ASSET_NAMESPACE: env.__STATIC_CONTENT,
         ASSET_MANIFEST: typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON,
       };
-      return await getAssetFromKV({ request, waitUntil: (p) => ctx.waitUntil(p) }, options);
+      return await getAssetFromKV(
+        {
+          request,
+          waitUntil: (promise) => ctx.waitUntil(promise),
+        },
+        options
+      );
     } catch (error) {
       return new Response('Not found', { status: 404 });
     }
