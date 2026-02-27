@@ -2,9 +2,15 @@
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import PostCard from '../../components/PostCard.astro';
 
-const postModules = import.meta.glob('../../content/blog/*.md', { eager: true });
+interface PostModule {
+  url?: string;
+  frontmatter: any;
+  default: any;
+}
+
+const postModules = import.meta.glob<PostModule>('../../content/blog/*.md', { eager: true });
 const posts = Object.entries(postModules).map(([file, module]) => {
-  const slug = file.split('/').pop().replace(/\.md$/, '');
+  const slug = file.split('/').pop()?.replace(/\.md$/, '') || '';
   return {
     slug,
     url: module.url ?? `/blog/${slug}`,
