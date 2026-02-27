@@ -28,7 +28,7 @@ const items = posts
   .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
 export async function GET(context) {
-  const response = await rss({
+  const rssResponse = await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
     site: context.site || 'https://rakshithsajjan.com',
@@ -41,9 +41,7 @@ export async function GET(context) {
     }))
   });
 
-  return new Response(response.body, {
-    headers: {
-      'content-type': 'application/xml'
-    }
+  return new Response(rssResponse.body, {
+    headers: rssResponse.headers
   });
 }
