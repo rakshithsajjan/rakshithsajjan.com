@@ -1,0 +1,3 @@
+## 2025-05-15 - Decoupling Layout from Animation Loops in ASCII Player
+**Learning:** In high-frequency animation loops (e.g., ASCII video players), recalculating layout metrics (font size, offsets, character measurement) every frame creates significant CPU overhead, especially when `requestAnimationFrame` fires at 60Hz+ while content is 15FPS. Additionally, assigning to `canvas.width` or `canvas.height` resets all context state (font, fillStyle), leading to redundant state updates.
+**Action:** Always cache layout and font metrics in a dedicated state object updated only via `ResizeObserver` or initialization. Implement a "dirty check" on the frame index to skip redundant `fillText` calls when the content hasn't changed between screen refreshes.
