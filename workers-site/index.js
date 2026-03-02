@@ -37,9 +37,11 @@ export default {
           ASSET_MANIFEST: assetManifest
         }
       );
-    } catch (error) {
-      // Fallback to 404 for missing assets
-      return new Response('Not found', { status: 404 });
+    } catch (e) {
+      if (e.status === 404 || e.message?.includes('not found')) {
+        return new Response('Not found', { status: 404 });
+      }
+      return new Response('Internal error', { status: 500 });
     }
   }
 };
