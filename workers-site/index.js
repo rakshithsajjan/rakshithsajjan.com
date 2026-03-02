@@ -6,6 +6,11 @@ const baseRedirects = [
   { from: 'www.rakshithsajjan.com', to: 'rakshithsajjan.com' }
 ];
 
+/**
+ * Handle asset manifest parsing.
+ * In some wrangler versions, __STATIC_CONTENT_MANIFEST is a JSON string,
+ * in others it's a pre-parsed object.
+ */
 const assetManifest = typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON;
 
 export default {
@@ -18,10 +23,14 @@ export default {
     }
 
     try {
+      /**
+       * getAssetFromKV requires the request and waitUntil in the first object,
+       * and the KV namespace + manifest in the options object.
+       */
       return await getAssetFromKV(
         {
           request,
-          waitUntil: ctx.waitUntil.bind(ctx)
+          waitUntil: (promise) => ctx.waitUntil(promise)
         },
         {
           ASSET_NAMESPACE: env.__STATIC_CONTENT,
@@ -29,6 +38,7 @@ export default {
         }
       );
     } catch (error) {
+      // Fallback to 404 for missing assets
       return new Response('Not found', { status: 404 });
     }
   }
