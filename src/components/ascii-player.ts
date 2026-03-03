@@ -21,6 +21,17 @@ type Manifest = {
   videoAspect?: number;
 };
 
+type RenderState = {
+  width: number;
+  height: number;
+  offsetX: number;
+  offsetY: number;
+  lineHeight: number;
+  scaleX: number;
+  fontSize: number;
+  phosphorColor: string;
+};
+
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '').trim();
   const full = normalized.length === 3
@@ -155,18 +166,31 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
 
-  const ctx = canvas.getContext('2d');
+  // Optimization: Disable alpha for better rendering throughput
+  const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) {
     throw new Error('Unable to get canvas context for ASCII player');
   }
 
   let manifest: Manifest | null = null;
+  let renderState: RenderState = {
+    width: 0,
+    height: 0,
+    offsetX: 0,
+    offsetY: 0,
+    lineHeight: 0,
+    scaleX: 1,
+    fontSize: 0,
+    phosphorColor: ''
+  };
+  let rowBuffer: string[] = [];
   let frames: Uint8Array[] = [];
   let running = false;
   let isVisible = true;
   let inViewport = true;
   let rafId = 0;
   let frameIndex = 0;
+  let lastRenderedFrameIndex = -1;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
 
@@ -184,23 +208,33 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   observer.observe(container);
 
   const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
+    if (manifest) {
+      updateLayout();
+      drawFrame(frames[frameIndex], manifest);
+    }
   });
 
   resizeObserver.observe(container);
 
   function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
+    if (posterNode) posterNode.textContent = text;
+    if (posterNode) (posterNode as HTMLElement).hidden = false;
+    if (canvas) (canvas as HTMLElement).hidden = true;
   }
 
   function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
+    if (posterNode) (posterNode as HTMLElement).hidden = true;
+    if (canvas) (canvas as HTMLElement).hidden = false;
   }
 
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  /**
+   * Recalculates layout metrics and updates canvas state.
+   * Optimization: Moved expensive calculations (offsets, scales, font strings)
+   * from the high-frequency drawFrame loop to this event-driven handler.
+   */
+  function updateLayout() {
+    if (!manifest || !canvas || !ctx) return;
+    const meta = manifest;
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
@@ -236,23 +270,51 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       1,
       Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+
     ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
+
+    renderState = {
+      width,
+      height,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      fontSize,
+      phosphorColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`
+    };
+
+    ctx.fillStyle = renderState.phosphorColor;
     ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
     ctx.shadowBlur = 4;
+    ctx.imageSmoothingEnabled = false;
+  }
 
+  /**
+   * Renders a single frame to the canvas.
+   * Optimization: Uses cached renderState and persistent rowBuffer to avoid per-frame allocations.
+   */
+  function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (renderState.width < 1 || !ctx) return;
+
+    // Clear background (alpha: false requires explicit clear)
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, renderState.width, renderState.height);
+
+    ctx.fillStyle = renderState.phosphorColor;
+    const { offsetX, offsetY, lineHeight, scaleX } = renderState;
     const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
+
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(scaleX, 1);
     for (let y = 0; y < meta.rows; y += 1) {
       const rowStart = y * meta.cols;
+      // Optimization: Fill existing buffer instead of creating new array
       for (let x = 0; x < meta.cols; x += 1) {
         rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
       }
@@ -261,6 +323,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     ctx.restore();
   }
 
+  /**
+   * Animation loop.
+   * Optimization: Skip drawFrame if the frame index hasn't advanced (player 15 FPS vs screen ~60 FPS).
+   */
   function tick(now: number) {
     if (!manifest || frames.length === 0) {
       rafId = window.requestAnimationFrame(tick);
@@ -281,7 +347,12 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
         }
         lastTick = now;
       }
-      drawFrame(frames[frameIndex], manifest);
+
+      if (frameIndex !== lastRenderedFrameIndex) {
+        // Fix: Use non-null assertion as running state implies manifest is loaded
+        drawFrame(frames[frameIndex], manifest!);
+        lastRenderedFrameIndex = frameIndex;
+      }
     }
 
     rafId = window.requestAnimationFrame(tick);
@@ -316,7 +387,9 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     }
 
     frames = decodeFrames(payload, meta);
+    rowBuffer = new Array(meta.cols);
     showCanvas();
+    updateLayout();
     running = autoplay;
     drawFrame(frames[0], meta);
   }).catch(async (error) => {
