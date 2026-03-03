@@ -1,4 +1,4 @@
-import rss from '@astrojs/rss';
+import rss, { type RSSFeedItem } from '@astrojs/rss';
 import fs from 'fs/promises';
 import path from 'path';
 import matter from 'gray-matter';
@@ -27,18 +27,20 @@ const items = posts
   .filter((post) => post.pubDate)
   .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
-export async function GET(context) {
+export async function GET(context: any) {
+  const rssItems: RSSFeedItem[] = items.map((post) => ({
+    title: post.title,
+    link: post.url,
+    description: post.description,
+    pubDate: post.pubDate,
+    content: post.content as string
+  }));
+
   const rssResponse = await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
     site: context.site || 'https://rakshithsajjan.com',
-    items: await Promise.all(items.map(async (post) => ({
-      title: post.title,
-      link: post.url,
-      description: post.description,
-      pubDate: post.pubDate,
-      content: await post.content
-    })))
+    items: rssItems
   });
 
   return new Response(rssResponse.body, {
