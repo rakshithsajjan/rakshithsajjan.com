@@ -1,6 +1,5 @@
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 import manifestJSON from '__STATIC_CONTENT_MANIFEST';
-const manifest = typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON;
 
 const baseRedirects = [
   { from: 'www.rakshithsajjan.com', to: 'rakshithsajjan.com' }
@@ -23,7 +22,7 @@ export default {
         },
         {
           ASSET_NAMESPACE: env.__STATIC_CONTENT,
-          ASSET_MANIFEST: manifest
+          ASSET_MANIFEST: JSON.parse(manifestJSON)
         }
       );
     } catch (error) {
