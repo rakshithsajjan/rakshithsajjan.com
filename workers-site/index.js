@@ -14,39 +14,27 @@ export default {
       return Response.redirect(location, 301);
     }
 
+    const options = {
+      ASSET_NAMESPACE: env.__STATIC_CONTENT,
+      ASSET_MANIFEST: typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON,
+    };
+
     try {
-      const assetManifest = typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON;
       return await getAssetFromKV(
         {
           request,
           waitUntil: (promise) => ctx.waitUntil(promise),
         },
-        {
-          ASSETS: env.__STATIC_CONTENT,
-          mapRequestToAsset: (req) => {
-            const url = new URL(req.url);
-            if (url.pathname.endsWith('/')) {
-              url.pathname += 'index.html';
-            }
-            return new Request(url.toString(), req);
-          },
-          ASSET_NAMESPACE: env.__STATIC_CONTENT,
-          ASSET_MANIFEST: assetManifest,
-        }
+        options
       );
     } catch (e) {
       try {
-        const assetManifest = typeof manifestJSON === 'string' ? JSON.parse(manifestJSON) : manifestJSON;
         const notFoundResponse = await getAssetFromKV(
           {
             request: new Request(`${url.origin}/404.html`),
             waitUntil: (promise) => ctx.waitUntil(promise),
           },
-          {
-            ASSETS: env.__STATIC_CONTENT,
-            ASSET_NAMESPACE: env.__STATIC_CONTENT,
-            ASSET_MANIFEST: assetManifest,
-          }
+          options
         );
 
         return new Response(notFoundResponse.body, {
