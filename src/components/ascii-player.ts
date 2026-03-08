@@ -33,6 +33,7 @@ type RenderState = {
   fillStyle: string;
   font: string;
   rowBuffer: string[];
+  shadowColor: string;
 };
 
 function hexToRgb(hex: string) {
@@ -169,7 +170,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
 
-  // Optimize context: alpha false if we fill entire background, desynchronized for low latency
+  // Optimize context: desynchronized for low latency
   const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   if (!ctx) {
     throw new Error('Unable to get canvas context for ASCII player');
@@ -241,6 +242,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       Math.max(0.4, (manifest.phosphorStrength ?? 0.82) * brightnessBoost)
     );
     const fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+    const shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
 
     ctx.font = font;
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
@@ -258,6 +260,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       scaleX,
       fillStyle,
       font,
+      shadowColor,
       rowBuffer: new Array(manifest.cols)
     };
 
@@ -294,7 +297,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
   function drawFrame(frame: Uint8Array) {
     if (!manifest || !renderState || !ctx) return;
-    const { dpr, offsetX, offsetY, lineHeight, fillStyle, font, scaleX, rowBuffer, width, height } = renderState;
+    const { dpr, offsetX, offsetY, lineHeight, fillStyle, font, scaleX, rowBuffer, width, height, shadowColor } = renderState;
 
     // Reset transform and clear
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -305,15 +308,15 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     ctx.font = font;
     ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
-    ctx.shadowColor = 'rgba(0,0,0,0)'; // Disable shadow for performance unless specifically needed
-    ctx.shadowBlur = 0;
+    ctx.shadowColor = shadowColor;
+    ctx.shadowBlur = 4;
 
     const chars = manifest.charset;
     const cols = manifest.cols;
     const rows = manifest.rows;
 
-    // Apply transform for scaling
-    ctx.setTransform(dpr * scaleX, 0, 0, dpr, dpr * scaleX * (offsetX / scaleX), dpr * offsetY);
+    // Apply transform for scaling and offset
+    ctx.setTransform(dpr * scaleX, 0, 0, dpr, dpr * offsetX, dpr * offsetY);
 
     for (let y = 0; y < rows; y += 1) {
       const rowStart = y * cols;
