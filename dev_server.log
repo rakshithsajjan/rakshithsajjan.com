@@ -1,0 +1,13 @@
+
+> rakshithsajjan.com@0.1.0 dev
+> astro dev
+
+08:28:15 [types] Generated 2ms
+
+ astro  v4.16.19 ready in 178 ms
+
+┃ Local    http://localhost:4321/
+┃ Network  use --host to expose
+
+08:28:15 watching for file changes...
+08:28:20 [200] / 18ms

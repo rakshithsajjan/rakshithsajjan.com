@@ -21,6 +21,21 @@ type Manifest = {
   videoAspect?: number;
 };
 
+type RenderState = {
+  width: number;
+  height: number;
+  dpr: number;
+  offsetX: number;
+  offsetY: number;
+  lineHeight: number;
+  scaleX: number;
+  fillStyle: string;
+  font: string;
+  shadowColor: string;
+  shadowBlur: number;
+  rowBuffer: string[];
+};
+
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '').trim();
   const full = normalized.length === 3
@@ -149,16 +164,20 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     autoplay = true
   } = options;
 
-  const canvas = container.querySelector('canvas');
-  const posterNode = container.querySelector('pre');
-  if (!(canvas instanceof HTMLCanvasElement) || !(posterNode instanceof HTMLPreElement)) {
+  const canvasElement = container.querySelector('canvas');
+  const posterElement = container.querySelector('pre');
+  if (!(canvasElement instanceof HTMLCanvasElement) || !(posterElement instanceof HTMLPreElement)) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
 
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
+  const canvas = canvasElement;
+  const posterNode = posterElement;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
     throw new Error('Unable to get canvas context for ASCII player');
   }
+  const ctx = context;
 
   let manifest: Manifest | null = null;
   let frames: Uint8Array[] = [];
@@ -167,8 +186,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let inViewport = true;
   let rafId = 0;
   let frameIndex = 0;
+  let lastDrawnIndex = -1;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
+  let renderState: RenderState | null = null;
 
   const observer = new IntersectionObserver((entries) => {
     inViewport = entries[0]?.isIntersecting ?? true;
@@ -184,39 +205,23 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   observer.observe(container);
 
   const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
+    if (manifest) {
+      updateRenderState(manifest);
+      drawFrame(frames[frameIndex], manifest);
+    }
   });
 
   resizeObserver.observe(container);
 
-  function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
-  }
-
-  function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
-  }
-
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  function updateRenderState(meta: Manifest) {
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
-
     const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
     const containerAspect = width / height;
+
     let coverWidth = width;
     let coverHeight = height;
     if (containerAspect > targetAspect) {
@@ -236,29 +241,89 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       1,
       Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
     ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
-    ctx.shadowBlur = 4;
+
+    renderState = {
+      width,
+      height,
+      dpr,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      fillStyle: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`,
+      font: ctx.font,
+      shadowColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`,
+      shadowBlur: 4,
+      rowBuffer: new Array(meta.cols)
+    };
+
+    lastDrawnIndex = -1;
+  }
+
+  function showPoster(text: string) {
+    posterNode.textContent = text;
+    posterNode.hidden = false;
+    canvas.hidden = true;
+  }
+
+  function showCanvas() {
+    posterNode.hidden = true;
+    canvas.hidden = false;
+  }
+
+  function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (!renderState) updateRenderState(meta);
+    if (!renderState) return;
+
+    const {
+      width,
+      height,
+      dpr,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      fillStyle,
+      font,
+      shadowColor,
+      shadowBlur,
+      rowBuffer
+    } = renderState;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = fillStyle;
+    ctx.font = font;
+    ctx.shadowColor = shadowColor;
+    ctx.shadowBlur = shadowBlur;
+    ctx.textBaseline = 'top';
+    ctx.imageSmoothingEnabled = false;
 
     const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scaleX, 1);
-    for (let y = 0; y < meta.rows; y += 1) {
-      const rowStart = y * meta.cols;
-      for (let x = 0; x < meta.cols; x += 1) {
+    const cols = meta.cols;
+    const rows = meta.rows;
+
+    for (let y = 0; y < rows; y += 1) {
+      const rowStart = y * cols;
+      for (let x = 0; x < cols; x += 1) {
         rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
       }
-      ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
+      ctx.setTransform(dpr * scaleX, 0, 0, dpr, (offsetX + 0) * dpr, (offsetY + y * lineHeight) * dpr);
+      ctx.fillText(rowBuffer.join(''), 0, 0);
     }
-    ctx.restore();
   }
 
   function tick(now: number) {
@@ -281,7 +346,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
         }
         lastTick = now;
       }
-      drawFrame(frames[frameIndex], manifest);
+      if (frameIndex !== lastDrawnIndex) {
+        drawFrame(frames[frameIndex], manifest);
+        lastDrawnIndex = frameIndex;
+      }
     }
 
     rafId = window.requestAnimationFrame(tick);
