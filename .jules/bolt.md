@@ -1,0 +1,3 @@
+## 2026-03-09 - Redundant Canvas Resets in Render Loops
+**Learning:** Assigning values to `canvas.width` or `canvas.height` resets the 2D context state (font, fillStyle, etc.) and triggers an expensive layout/GPU flush. In a high-frequency render loop (like an ASCII video player), this is a major performance bottleneck as it forces the browser to re-initialize the GPU context on every frame.
+**Action:** Cache canvas dimensions and only update them if they actually change (e.g., via `ResizeObserver`). Decouple layout/font calculations from the render loop into a structured `RenderState` object to avoid redundant $O(N)$ operations.
