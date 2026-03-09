@@ -316,13 +316,17 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const cols = meta.cols;
     const rows = meta.rows;
 
+    // Set scale and offset once per frame to minimize context state changes.
+    // X is scaled to match the grid cell width to the measured glyph width.
+    // Y is scaled by DPR, and translation moves to the start of the video area.
+    ctx.setTransform(dpr * scaleX, 0, 0, dpr, offsetX * dpr, offsetY * dpr);
+
     for (let y = 0; y < rows; y += 1) {
       const rowStart = y * cols;
       for (let x = 0; x < cols; x += 1) {
         rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
       }
-      ctx.setTransform(dpr * scaleX, 0, 0, dpr, (offsetX + 0) * dpr, (offsetY + y * lineHeight) * dpr);
-      ctx.fillText(rowBuffer.join(''), 0, 0);
+      ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
     }
   }
 
