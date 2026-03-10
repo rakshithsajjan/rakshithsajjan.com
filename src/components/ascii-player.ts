@@ -21,6 +21,20 @@ type Manifest = {
   videoAspect?: number;
 };
 
+type RenderState = {
+  width: number;
+  height: number;
+  dpr: number;
+  fontSize: number;
+  lineHeight: number;
+  scaleX: number;
+  offsetX: number;
+  offsetY: number;
+  rgb: { r: number; g: number; b: number };
+  phosphorStrength: number;
+  rowBuffer: string[];
+};
+
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '').trim();
   const full = normalized.length === 3
@@ -169,6 +183,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let frameIndex = 0;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
+  let renderState: RenderState | null = null;
 
   const observer = new IntersectionObserver((entries) => {
     inViewport = entries[0]?.isIntersecting ?? true;
@@ -184,37 +199,20 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   observer.observe(container);
 
   const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
+    if (manifest) {
+      updateRenderState(manifest);
+      drawFrame(frames[frameIndex], manifest);
+    }
   });
 
   resizeObserver.observe(container);
 
-  function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
-  }
-
-  function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
-  }
-
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  function updateRenderState(meta: Manifest) {
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
-
     const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
     const containerAspect = width / height;
     let coverWidth = width;
@@ -236,21 +234,89 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       1,
       Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
-    ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.imageSmoothingEnabled = false;
-    ctx.textBaseline = 'top';
-    const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
+
+    ctx!.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    ctx!.imageSmoothingEnabled = false;
+    ctx!.textBaseline = 'top';
+    const measuredGlyph = Math.max(0.0001, ctx!.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
+
+    renderState = {
+      width,
+      height,
+      dpr,
+      fontSize,
+      lineHeight,
+      scaleX,
+      offsetX,
+      offsetY,
+      rgb,
+      phosphorStrength,
+      rowBuffer: new Array(meta.cols)
+    };
+  }
+
+  function applyContextSettings(state: RenderState) {
+    if (!ctx) return;
+    ctx.font = `${state.fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    ctx.imageSmoothingEnabled = false;
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = `rgba(${state.rgb.r}, ${state.rgb.g}, ${state.rgb.b}, ${state.phosphorStrength})`;
+    ctx.shadowColor = `rgba(${state.rgb.r}, ${state.rgb.g}, ${state.rgb.b}, 0.35)`;
     ctx.shadowBlur = 4;
+  }
+
+  function showPoster(text: string) {
+    if (posterNode) {
+      posterNode.textContent = text;
+      posterNode.hidden = false;
+    }
+    if (canvas) canvas.hidden = true;
+  }
+
+  function showCanvas() {
+    if (posterNode) posterNode.hidden = true;
+    if (canvas) canvas.hidden = false;
+  }
+
+  function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (!renderState || !canvas || !ctx) {
+      return;
+    }
+
+    const {
+      width,
+      height,
+      dpr,
+      lineHeight,
+      scaleX,
+      offsetX,
+      offsetY,
+      rowBuffer
+    } = renderState;
+
+    const canvasWidth = Math.floor(width * dpr);
+    const canvasHeight = Math.floor(height * dpr);
+
+    if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      applyContextSettings(renderState);
+    }
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, width, height);
+
+    // Re-apply fillStyle for the phosphor color as the clearRect background is black
+    ctx.fillStyle = `rgba(${renderState.rgb.r}, ${renderState.rgb.g}, ${renderState.rgb.b}, ${renderState.phosphorStrength})`;
 
     const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scaleX, 1);
+    ctx.setTransform(dpr * scaleX, 0, 0, dpr, offsetX * dpr, offsetY * dpr);
+
     for (let y = 0; y < meta.rows; y += 1) {
       const rowStart = y * meta.cols;
       for (let x = 0; x < meta.cols; x += 1) {
@@ -258,7 +324,6 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       }
       ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
     }
-    ctx.restore();
   }
 
   function tick(now: number) {
@@ -317,6 +382,8 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
     frames = decodeFrames(payload, meta);
     showCanvas();
+    updateRenderState(meta);
+    if (renderState) applyContextSettings(renderState);
     running = autoplay;
     drawFrame(frames[0], meta);
   }).catch(async (error) => {
