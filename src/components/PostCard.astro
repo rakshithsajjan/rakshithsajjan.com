@@ -14,8 +14,8 @@ const frontmatter = post.frontmatter ?? post.data;
   </a>
   {frontmatter.tags?.length ? (
     <div class="tags">
-      {frontmatter.tags.map((tag) => (
-        <span class="tag" key={tag}>{tag}</span>
+      {frontmatter.tags.map((tag: string) => (
+        <span class="tag">{tag}</span>
       ))}
     </div>
   ) : null}

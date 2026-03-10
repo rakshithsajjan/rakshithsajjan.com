@@ -1,16 +1,23 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 
-const postModules = import.meta.glob('../../content/blog/*.md', { eager: true });
 export async function getStaticPaths() {
   const modules = import.meta.glob('../../content/blog/*.md', { eager: true });
   return Object.keys(modules).map((file) => {
-    const slug = file.split('/').pop().replace(/\.md$/, '');
+    const slug = file.split('/').pop()?.replace(/\.md$/, '') ?? '';
     return { params: { slug } };
   });
 }
+
+interface MarkdownInstance {
+  url: string | undefined;
+  frontmatter: any;
+  default: any;
+}
+
+const postModules = import.meta.glob<MarkdownInstance>('../../content/blog/*.md', { eager: true });
 const posts = Object.entries(postModules).map(([file, module]) => {
-  const slug = file.split('/').pop().replace(/\.md$/, '');
+  const slug = file.split('/').pop()?.replace(/\.md$/, '') ?? '';
   return {
     slug,
     url: module.url ?? `/blog/${slug}`,
@@ -33,8 +40,8 @@ const Content = post.Content;
       <h1>{post.frontmatter.title}</h1>
       <p>{post.frontmatter.description}</p>
       <div class="tags">
-        {post.frontmatter.tags?.map((tag) => (
-          <span class="tag" key={tag}>{tag}</span>
+        {post.frontmatter.tags?.map((tag: string) => (
+          <span class="tag">{tag}</span>
         ))}
       </div>
       <section class="content-body">
