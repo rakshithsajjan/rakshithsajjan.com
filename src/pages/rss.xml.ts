@@ -4,9 +4,17 @@ import path from 'path';
 import matter from 'gray-matter';
 import { marked } from 'marked';
 
+interface Post {
+  title: string;
+  description: string;
+  pubDate: Date;
+  content: string;
+  url: string;
+}
+
 const contentDir = path.resolve('src/content/blog');
 const files = await fs.readdir(contentDir);
-const posts = await Promise.all(
+const posts: Post[] = await Promise.all(
   files
     .filter((file) => file.endsWith('.md'))
     .map(async (file) => {
@@ -16,8 +24,8 @@ const posts = await Promise.all(
       return {
         title: data.title,
         description: data.description,
-        pubDate: data.pubDate,
-        content: await marked.parse(content),
+        pubDate: new Date(data.pubDate),
+        content: await marked.parse(content) as string,
         url: `/blog/${slug}`
       };
     })
@@ -37,7 +45,7 @@ export const GET = async () => {
       link: post.url,
       description: post.description,
       pubDate: post.pubDate,
-      content: post.content as string
+      content: post.content
     }))
   });
 
