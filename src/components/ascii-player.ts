@@ -149,15 +149,29 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     autoplay = true
   } = options;
 
-  const canvas = container.querySelector('canvas');
-  const posterNode = container.querySelector('pre');
-  if (!(canvas instanceof HTMLCanvasElement) || !(posterNode instanceof HTMLPreElement)) {
+  const canvasNode = container.querySelector('canvas');
+  const preNode = container.querySelector('pre');
+  if (!(canvasNode instanceof HTMLCanvasElement) || !(preNode instanceof HTMLPreElement)) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
+  const canvas = canvasNode;
+  const posterNode = preNode;
 
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
+  const context = canvas.getContext('2d');
+  if (!context) {
     throw new Error('Unable to get canvas context for ASCII player');
+  }
+  const ctx = context;
+
+  interface RenderState {
+    width: number;
+    height: number;
+    dpr: number;
+    offsetX: number;
+    offsetY: number;
+    lineHeight: number;
+    scaleX: number;
+    rowBuffer: string[];
   }
 
   let manifest: Manifest | null = null;
@@ -169,6 +183,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let frameIndex = 0;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
+  let renderState: RenderState | null = null;
 
   const observer = new IntersectionObserver((entries) => {
     inViewport = entries[0]?.isIntersecting ?? true;
@@ -184,7 +199,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   observer.observe(container);
 
   const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
+    renderState = null;
+    if (manifest && frames.length > 0) {
+      drawFrame(frames[frameIndex], manifest);
+    }
   });
 
   resizeObserver.observe(container);
@@ -200,20 +218,16 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     canvas.hidden = false;
   }
 
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  function updateRenderState(meta: Manifest): RenderState | null {
     const width = container.clientWidth;
     const height = container.clientHeight;
-    if (width < 1 || height < 1) return;
+    if (width < 1 || height < 1) return null;
 
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.floor(width * dpr);
     canvas.height = Math.floor(height * dpr);
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
 
     const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
     const containerAspect = width / height;
@@ -236,21 +250,51 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       1,
       Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
     );
+
+    // Set static context state
     ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
     ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
     ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
-    const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
-    const cellWidth = coverWidth / meta.cols;
-    const scaleX = cellWidth / measuredGlyph;
     ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
     ctx.shadowBlur = 4;
 
+    const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
+    const cellWidth = coverWidth / meta.cols;
+    const scaleX = cellWidth / measuredGlyph;
+
+    return {
+      width,
+      height,
+      dpr,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      rowBuffer: new Array(meta.cols)
+    };
+  }
+
+  function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (!renderState) {
+      renderState = updateRenderState(meta);
+    }
+    const state = renderState;
+    if (!state) return;
+
+    // Fast clear
+    ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+    const prevFillStyle = ctx.fillStyle;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, state.width, state.height);
+    ctx.fillStyle = prevFillStyle;
+
     const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scaleX, 1);
+    const { rowBuffer, offsetX, offsetY, scaleX, lineHeight } = state;
+
+    // Use direct transform instead of save/restore
+    ctx.setTransform(state.dpr * scaleX, 0, 0, state.dpr, offsetX * state.dpr, offsetY * state.dpr);
+
     for (let y = 0; y < meta.rows; y += 1) {
       const rowStart = y * meta.cols;
       for (let x = 0; x < meta.cols; x += 1) {
@@ -258,7 +302,6 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       }
       ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
     }
-    ctx.restore();
   }
 
   function tick(now: number) {
