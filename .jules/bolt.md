@@ -1,0 +1,3 @@
+## 2025-05-15 - DOM-to-Canvas Bottlenecks in Animation Loops
+**Learning:** Calling DOM properties like `clientWidth`, `clientHeight`, or `offsetWidth` inside a `requestAnimationFrame` loop (60 FPS) causes layout thrashing, significantly increasing frame time. Additionally, assigning to `canvas.width` or `canvas.height` resets the entire 2D context state (fonts, fill styles, transforms), even if the values are identical to the current ones.
+**Action:** Always cache layout metrics in a state object and only update it via `ResizeObserver` or window resize events. Always guard canvas dimension assignments with a check to see if the value has actually changed.
