@@ -184,6 +184,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let inViewport = true;
   let rafId = 0;
   let frameIndex = 0;
+  let lastDrawnFrameIndex = -1;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
 
@@ -203,7 +204,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   const resizeObserver = new ResizeObserver(() => {
     if (manifest) {
       updateRenderState(manifest);
-      drawFrame(frames[frameIndex], manifest);
+      if (frames[frameIndex]) {
+        drawFrame(frames[frameIndex], manifest);
+        lastDrawnFrameIndex = frameIndex;
+      }
     }
   });
 
@@ -354,7 +358,13 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
         }
         lastTick = now;
       }
-      drawFrame(frames[frameIndex], manifest);
+
+      // OPTIMIZATION: Only redraw if the frame has actually changed.
+      // This saves significant CPU/GPU resources when the video FPS is lower than the refresh rate.
+      if (frameIndex !== lastDrawnFrameIndex) {
+        drawFrame(frames[frameIndex], manifest);
+        lastDrawnFrameIndex = frameIndex;
+      }
     }
 
     rafId = window.requestAnimationFrame(tick);
@@ -393,7 +403,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     updateRenderState(meta);
     showCanvas();
     running = autoplay;
-    drawFrame(frames[0], meta);
+    if (frames[0]) {
+      drawFrame(frames[0], meta);
+      lastDrawnFrameIndex = 0;
+    }
   }).catch(async (error) => {
     console.warn('ASCII player fallback to poster:', error);
     const posterText = await loadPoster(posterUrl).catch(() => 'ASCII preview unavailable');
