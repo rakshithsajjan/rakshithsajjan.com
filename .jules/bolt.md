@@ -1,3 +1,3 @@
-## 2025-05-15 - Optimize ASCII player rendering loop
-**Learning:** High-frequency (60fps) canvas rendering loops in Astro/TypeScript components can suffer from significant "DOM thrashing" and GC pressure if property lookups (like `canvas.width`) and string allocations (like `fillStyle`) are done every frame. Explicitly caching these in a `RenderState` updated only on resize provides a massive performance boost.
-**Action:** Always decouple layout/metric calculations from the render loop. Use persistent buffers for per-frame data and prefer direct state setting over `save()`/`restore()` where possible.
+## 2025-05-15 - DOM-to-Canvas Bottlenecks in Animation Loops
+**Learning:** Calling DOM properties like `clientWidth`, `clientHeight`, or `offsetWidth` inside a `requestAnimationFrame` loop (60 FPS) causes layout thrashing, significantly increasing frame time. Additionally, assigning to `canvas.width` or `canvas.height` resets the entire 2D context state (fonts, fill styles, transforms), even if the values are identical to the current ones.
+**Action:** Always cache layout metrics in a state object and only update it via `ResizeObserver` or window resize events. Always guard canvas dimension assignments with a check to see if the value has actually changed.

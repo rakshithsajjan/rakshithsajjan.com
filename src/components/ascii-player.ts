@@ -169,6 +169,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
 
+  // OPTIMIZATION: Disable alpha and enable desynchronized for lower latency/higher throughput
   const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   if (!ctx) {
     throw new Error('Unable to get canvas context for ASCII player');
@@ -208,7 +209,13 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
   resizeObserver.observe(container);
 
+  /**
+   * OPTIMIZATION: Cache layout metrics and context state.
+   * This avoids expensive DOM lookups, canvas dimension resets,
+   * and context state assignments during high-frequency (60fps) render ticks.
+   */
   function updateRenderState(meta: Manifest) {
+    if (!canvas || !ctx) return;
     const width = container.clientWidth;
     const height = container.clientHeight;
     const dpr = window.devicePixelRatio || 1;
@@ -217,6 +224,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const canvasWidth = Math.floor(width * dpr);
     const canvasHeight = Math.floor(height * dpr);
 
+    // Only update canvas dimensions if they've changed, as assignment resets context state
     const needsRescale = !renderState ||
                         renderState.width !== width ||
                         renderState.height !== height ||
@@ -254,6 +262,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
     const shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
 
+    // Apply baseline context state that won't change per-frame
     ctx.font = font;
     ctx.fillStyle = fillStyle;
     ctx.imageSmoothingEnabled = false;
@@ -281,28 +290,30 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   }
 
   function showPoster(text: string) {
+    if (!posterNode || !canvas) return;
     posterNode.textContent = text;
     posterNode.hidden = false;
     canvas.hidden = true;
   }
 
   function showCanvas() {
+    if (!posterNode || !canvas) return;
     posterNode.hidden = true;
     canvas.hidden = false;
   }
 
   function drawFrame(frame: Uint8Array, meta: Manifest) {
-    if (!renderState) return;
+    if (!renderState || !ctx) return;
 
     const { dpr, width, height, offsetX, offsetY, scaleX, lineHeight, fillStyle } = renderState;
 
-    // 1. Reset transform to DPR and clear/fill background
+    // 1. Reset transform to DPR and clear background
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.shadowBlur = 0;
+    ctx.shadowBlur = 0; // Disable shadow for background fill
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
-    // 2. Set text style (font and shadowColor remain persistent from updateRenderState)
+    // 2. Restore text style
     ctx.fillStyle = fillStyle;
     ctx.shadowBlur = 4;
 
@@ -310,9 +321,8 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const cols = meta.cols;
     const rows = meta.rows;
 
-    // 3. Apply combined transform: scale by scaleX/1, translate by offsetX/offsetY
-    // Matrix: [dpr*scaleX, 0, dpr*offsetX]
-    //         [0, dpr, dpr*offsetY]
+    // 3. Combined transform: translate by offset, scale by scaleX
+    // Using setTransform is faster than save()/translate()/scale()/restore()
     ctx.setTransform(dpr * scaleX, 0, 0, dpr, dpr * offsetX, dpr * offsetY);
 
     for (let y = 0; y < rows; y += 1) {
@@ -379,7 +389,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     }
 
     frames = decodeFrames(payload, meta);
-    rowBuffer = new Array(meta.cols);
+    rowBuffer = new Array(meta.cols); // Pre-allocate buffer to reduce GC
     updateRenderState(meta);
     showCanvas();
     running = autoplay;
