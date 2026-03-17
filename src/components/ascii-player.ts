@@ -188,6 +188,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let lastTick = 0;
   let renderState: RenderState | null = null;
   let rowBuffer: string[] = [];
+  let charTable = new Array(256).fill(' ');
 
   const updateRenderState = () => {
     if (!manifest) return;
@@ -311,14 +312,13 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     ctx.shadowColor = shadowColor;
     ctx.shadowBlur = 4;
 
-    const chars = meta.charset;
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(scaleX, 1);
     for (let y = 0; y < meta.rows; y += 1) {
       const rowStart = y * meta.cols;
       for (let x = 0; x < meta.cols; x += 1) {
-        rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
+        rowBuffer[x] = charTable[frame[rowStart + x]];
       }
       ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
     }
@@ -381,6 +381,13 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     }
 
     frames = decodeFrames(payload, meta);
+
+    // Pre-populate character table for faster lookup in render loop
+    const chars = meta.charset;
+    for (let i = 0; i < 256; i++) {
+      charTable[i] = chars[i] ?? ' ';
+    }
+
     showCanvas();
     updateRenderState();
     running = autoplay;
