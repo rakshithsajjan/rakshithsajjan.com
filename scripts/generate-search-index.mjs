@@ -1,6 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
-import matter from 'gray-matter';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const matter = require('gray-matter');
 
 const contentDir = path.resolve('src/content/blog');
 const outputPath = path.resolve('public/search-index.json');
