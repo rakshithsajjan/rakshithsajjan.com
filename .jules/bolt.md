@@ -1,0 +1,3 @@
+## 2025-05-15 - Caching Render State in ASCII Player
+**Learning:** Assigning values to `canvas.width` or `canvas.height` resets the 2D context state (font, fillStyle, etc.), even if the values are the same as current. Redundant layout calculations (measuring text, calculating offsets) in high-frequency animation loops (15+ FPS) significantly increase frame render time.
+**Action:** Use a `RenderState` object updated only via `ResizeObserver` to cache layout and style parameters. Check for dimension changes before assigning to `canvas.width/height`. Re-apply context state immediately after any dimension change.
