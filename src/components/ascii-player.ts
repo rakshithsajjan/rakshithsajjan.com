@@ -21,6 +21,23 @@ type Manifest = {
   videoAspect?: number;
 };
 
+type RenderState = {
+  width: number;
+  height: number;
+  dpr: number;
+  offsetX: number;
+  offsetY: number;
+  lineHeight: number;
+  fontSize: number;
+  cellWidth: number;
+  scaleX: number;
+  measuredGlyph: number;
+  rgb: { r: number; g: number; b: number };
+  phosphorStrength: number;
+  charTable: string[];
+  rowBuffer: string[];
+};
+
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '').trim();
   const full = normalized.length === 3
@@ -155,13 +172,14 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
 
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   if (!ctx) {
     throw new Error('Unable to get canvas context for ASCII player');
   }
 
   let manifest: Manifest | null = null;
   let frames: Uint8Array[] = [];
+  let renderState: RenderState | null = null;
   let running = false;
   let isVisible = true;
   let inViewport = true;
@@ -184,7 +202,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   observer.observe(container);
 
   const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
+    if (manifest) {
+      updateRenderState(manifest);
+      drawFrame(frames[frameIndex], manifest);
+    }
   });
 
   resizeObserver.observe(container);
@@ -200,7 +221,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     canvas.hidden = false;
   }
 
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  function updateRenderState(meta: Manifest) {
     const width = container.clientWidth;
     const height = container.clientHeight;
     if (width < 1 || height < 1) return;
@@ -210,10 +231,6 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     canvas.height = Math.floor(height * dpr);
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
 
     const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
     const containerAspect = width / height;
@@ -236,29 +253,84 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       1,
       Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+
     ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
+
+    const charTable = new Array(256);
+    const charset = meta.charset;
+    for (let i = 0; i < 256; i++) {
+      charTable[i] = charset[i] ?? ' ';
+    }
+
+    renderState = {
+      width,
+      height,
+      dpr,
+      offsetX,
+      offsetY,
+      lineHeight,
+      fontSize,
+      cellWidth,
+      scaleX,
+      measuredGlyph,
+      rgb,
+      phosphorStrength,
+      charTable,
+      rowBuffer: new Array(meta.cols)
+    };
+
+    // Re-apply context state because canvas resize resets it
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+    ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    ctx.textBaseline = 'top';
+    ctx.imageSmoothingEnabled = false;
     ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
     ctx.shadowBlur = 4;
+  }
 
-    const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scaleX, 1);
-    for (let y = 0; y < meta.rows; y += 1) {
-      const rowStart = y * meta.cols;
-      for (let x = 0; x < meta.cols; x += 1) {
-        rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
+  function drawFrame(frame: Uint8Array, meta: Manifest) {
+    if (!renderState) return;
+
+    const {
+      width,
+      height,
+      offsetX,
+      offsetY,
+      lineHeight,
+      scaleX,
+      charTable,
+      rowBuffer
+    } = renderState;
+
+    // Temporarily disable shadow for the clear operation to avoid massive perf penalty
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, width, height);
+    ctx.shadowBlur = 4;
+
+    const { r, g, b } = renderState.rgb;
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${renderState.phosphorStrength})`;
+
+    const cols = meta.cols;
+    const rows = meta.rows;
+
+    ctx.setTransform(renderState.dpr * scaleX, 0, 0, renderState.dpr, renderState.offsetX * renderState.dpr, renderState.offsetY * renderState.dpr);
+
+    for (let y = 0; y < rows; y += 1) {
+      const rowStart = y * cols;
+      for (let x = 0; x < cols; x += 1) {
+        rowBuffer[x] = charTable[frame[rowStart + x]];
       }
       ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
     }
-    ctx.restore();
+
+    // Reset transform for next frame's clear
+    ctx.setTransform(renderState.dpr, 0, 0, renderState.dpr, 0, 0);
   }
 
   function tick(now: number) {
@@ -317,6 +389,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
     frames = decodeFrames(payload, meta);
     showCanvas();
+    updateRenderState(meta);
     running = autoplay;
     drawFrame(frames[0], meta);
   }).catch(async (error) => {

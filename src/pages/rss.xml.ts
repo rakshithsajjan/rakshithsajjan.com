@@ -1,34 +1,36 @@
 import rss from '@astrojs/rss';
-import fs from 'fs/promises';
-import path from 'path';
-import matter from 'gray-matter';
 import { marked } from 'marked';
 
-const contentDir = path.resolve('src/content/blog');
-const files = await fs.readdir(contentDir);
-const posts = await Promise.all(
-  files
-    .filter((file) => file.endsWith('.md'))
-    .map(async (file) => {
-      const slug = file.replace(/\.md$/, '');
-      const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
-      const { data, content } = matter(raw);
+interface MarkdownInstance {
+  url: string | undefined;
+  frontmatter: Record<string, any>;
+  default: any;
+}
+
+export const GET = async () => {
+  const postModules = import.meta.glob<MarkdownInstance>('../content/blog/*.md', { eager: true });
+
+  const posts = await Promise.all(
+    Object.entries(postModules).map(async ([file, module]) => {
+      const slug = file.split('/').pop()?.replace(/\.md$/, '') ?? '';
+      const frontmatter = module.frontmatter ?? module.default?.frontmatter;
+      const rawContent = module.default?.rawContent?.() || '';
+
       return {
-        title: data.title,
-        description: data.description,
-        pubDate: data.pubDate,
-        content: marked(content),
+        title: frontmatter.title,
+        description: frontmatter.description,
+        pubDate: frontmatter.pubDate,
+        content: await marked.parse(rawContent),
         url: `/blog/${slug}`
       };
     })
-);
+  );
 
-const items = posts
-  .filter((post) => post.pubDate)
-  .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+  const items = posts
+    .filter((post) => post.pubDate)
+    .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
-export const get = () =>
-  rss({
+  const feed = await rss({
     title: 'rakshithsajjan.com',
     description: 'Notes, experiments, and writing from Rakshith Sajjan.',
     site: 'https://rakshithsajjan.com',
@@ -40,3 +42,10 @@ export const get = () =>
       content: post.content
     }))
   });
+
+  return new Response(feed.body, {
+    headers: {
+      'content-type': 'application/xml'
+    }
+  });
+};
