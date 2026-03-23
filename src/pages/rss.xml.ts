@@ -1,27 +1,29 @@
 import rss from '@astrojs/rss';
-import fs from 'fs/promises';
-import path from 'path';
-import matter from 'gray-matter';
 import { marked } from 'marked';
 
+interface MarkdownInstance {
+  url: string | undefined;
+  frontmatter: Record<string, any>;
+  default: any;
+}
+
 export const GET = async () => {
-  const contentDir = path.resolve('src/content/blog');
-  const files = await fs.readdir(contentDir);
+  const postModules = import.meta.glob<MarkdownInstance>('../content/blog/*.md', { eager: true });
+
   const posts = await Promise.all(
-    files
-      .filter((file) => file.endsWith('.md'))
-      .map(async (file) => {
-        const slug = file.replace(/\.md$/, '');
-        const raw = await fs.readFile(path.join(contentDir, file), 'utf-8');
-        const { data, content } = matter(raw);
-        return {
-          title: data.title,
-          description: data.description,
-          pubDate: data.pubDate,
-          content: await marked.parse(content),
-          url: `/blog/${slug}`
-        };
-      })
+    Object.entries(postModules).map(async ([file, module]) => {
+      const slug = file.split('/').pop()?.replace(/\.md$/, '') ?? '';
+      const frontmatter = module.frontmatter ?? module.default?.frontmatter;
+      const rawContent = module.default?.rawContent?.() || '';
+
+      return {
+        title: frontmatter.title,
+        description: frontmatter.description,
+        pubDate: frontmatter.pubDate,
+        content: await marked.parse(rawContent),
+        url: `/blog/${slug}`
+      };
+    })
   );
 
   const items = posts
