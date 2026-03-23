@@ -18,7 +18,7 @@ export const GET = async () => {
           title: data.title,
           description: data.description,
           pubDate: data.pubDate,
-          content: marked(content),
+          content: await marked.parse(content),
           url: `/blog/${slug}`
         };
       })
