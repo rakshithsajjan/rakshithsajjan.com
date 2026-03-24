@@ -1,0 +1,3 @@
+## 2025-05-15 - Canvas Performance & Layout Thrashing
+**Learning:** Accessing `container.clientWidth` or setting `canvas.width` inside a `requestAnimationFrame` loop causes major performance hits. `canvas.width` resets the context state, and `clientWidth` triggers synchronous reflows. Additionally, rendering a 15fps video at 60fps refresh rate results in 75% redundant work.
+**Action:** Use `ResizeObserver` to update a cached `RenderState` object and only resize the canvas when necessary. Decouple the draw call from the `requestAnimationFrame` loop by checking if the content's frame index has actually changed. Pre-calculate character lookups and reuse buffers to minimize garbage collection.

@@ -21,6 +21,23 @@ type Manifest = {
   videoAspect?: number;
 };
 
+type RenderState = {
+  width: number;
+  height: number;
+  dpr: number;
+  offsetX: number;
+  offsetY: number;
+  lineHeight: number;
+  fontSize: number;
+  scaleX: number;
+  cellWidth: number;
+  measuredGlyph: number;
+  rgb: { r: number, g: number, b: number };
+  phosphorStrength: number;
+  charLookup: string[];
+  rowBuffer: string[];
+};
+
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '').trim();
   const full = normalized.length === 3
@@ -155,7 +172,8 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     throw new Error('ASCII player container requires <canvas> and <pre>');
   }
 
-  const ctx = canvas.getContext('2d');
+  // BOLT: Initialize context with performance-optimizing hints.
+  const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
   if (!ctx) {
     throw new Error('Unable to get canvas context for ASCII player');
   }
@@ -169,51 +187,24 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let frameIndex = 0;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
+  let renderState: RenderState | null = null;
 
-  const observer = new IntersectionObserver((entries) => {
-    inViewport = entries[0]?.isIntersecting ?? true;
-    if (!inViewport) {
-      running = false;
-      return;
-    }
-    if (autoplay && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      running = true;
-    }
-  }, { threshold: 0.1 });
-
-  observer.observe(container);
-
-  const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
-  });
-
-  resizeObserver.observe(container);
-
-  function showPoster(text: string) {
-    posterNode.textContent = text;
-    posterNode.hidden = false;
-    canvas.hidden = true;
-  }
-
-  function showCanvas() {
-    posterNode.hidden = true;
-    canvas.hidden = false;
-  }
-
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
+  function updateRenderState(meta: Manifest) {
     const width = container.clientWidth;
     const height = container.clientHeight;
-    if (width < 1 || height < 1) return;
+    if (width < 1 || height < 1) return null;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    const canvasWidth = Math.floor(width * dpr);
+    const canvasHeight = Math.floor(height * dpr);
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, width, height);
+    // BOLT: Only resize canvas when dimensions actually change to avoid expensive state resets.
+    if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+    }
 
     const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
     const containerAspect = width / height;
@@ -236,29 +227,102 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       1,
       Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+
     ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
+
+    // BOLT: Pre-calculate character lookup table for O(1) frame decoding.
+    const charset = meta.charset;
+    const charLookup = new Array(256);
+    for (let i = 0; i < 256; i++) {
+      charLookup[i] = charset[i] ?? ' ';
+    }
+
+    return {
+      width,
+      height,
+      dpr,
+      offsetX,
+      offsetY,
+      lineHeight,
+      fontSize,
+      scaleX,
+      cellWidth,
+      measuredGlyph,
+      rgb,
+      phosphorStrength,
+      charLookup,
+      rowBuffer: new Array(meta.cols)
+    };
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    inViewport = entries[0]?.isIntersecting ?? true;
+    if (!inViewport) {
+      running = false;
+      return;
+    }
+    if (autoplay && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      running = true;
+    }
+  }, { threshold: 0.1 });
+
+  observer.observe(container);
+
+  const resizeObserver = new ResizeObserver(() => {
+    if (manifest) {
+      renderState = updateRenderState(manifest);
+      drawFrame(frames[frameIndex]);
+    }
+  });
+
+  resizeObserver.observe(container);
+
+  function showPoster(text: string) {
+    posterNode.textContent = text;
+    posterNode.hidden = false;
+    canvas.hidden = true;
+  }
+
+  function showCanvas() {
+    posterNode.hidden = true;
+    canvas.hidden = false;
+  }
+
+  function drawFrame(frame: Uint8Array | undefined) {
+    if (!frame || !renderState || !manifest) return;
+    const s = renderState;
+
+    // BOLT: Use cached render state properties to avoid layout thrashing and redundant calculations.
+    ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
+
+    // BOLT: Disable shadow for the clear operation to avoid extreme performance penalty.
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, s.width, s.height);
+
+    ctx.fillStyle = `rgba(${s.rgb.r}, ${s.rgb.g}, ${s.rgb.b}, ${s.phosphorStrength})`;
+    ctx.font = `${s.fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    ctx.textBaseline = 'top';
+    ctx.shadowColor = `rgba(${s.rgb.r}, ${s.rgb.g}, ${s.rgb.b}, 0.35)`;
     ctx.shadowBlur = 4;
 
-    const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scaleX, 1);
-    for (let y = 0; y < meta.rows; y += 1) {
-      const rowStart = y * meta.cols;
-      for (let x = 0; x < meta.cols; x += 1) {
-        rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
+    const { cols, rows } = manifest;
+    const { charLookup, rowBuffer } = s;
+
+    // BOLT: Direct transform updates are faster than save/restore.
+    ctx.setTransform(s.dpr * s.scaleX, 0, 0, s.dpr, s.dpr * s.offsetX, s.dpr * s.offsetY);
+
+    for (let y = 0; y < rows; y += 1) {
+      const rowStart = y * cols;
+      for (let x = 0; x < cols; x += 1) {
+        rowBuffer[x] = charLookup[frame[rowStart + x]];
       }
-      ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
+      ctx.fillText(rowBuffer.join(''), 0, y * s.lineHeight);
     }
-    ctx.restore();
   }
 
   function tick(now: number) {
@@ -280,8 +344,9 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
           running = false;
         }
         lastTick = now;
+        // BOLT: Only draw frame when index changes, avoiding redundant draws at 60fps for 15fps content.
+        drawFrame(frames[frameIndex]);
       }
-      drawFrame(frames[frameIndex], manifest);
     }
 
     rafId = window.requestAnimationFrame(tick);
@@ -317,8 +382,9 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
     frames = decodeFrames(payload, meta);
     showCanvas();
+    renderState = updateRenderState(meta);
     running = autoplay;
-    drawFrame(frames[0], meta);
+    drawFrame(frames[0]);
   }).catch(async (error) => {
     console.warn('ASCII player fallback to poster:', error);
     const posterText = await loadPoster(posterUrl).catch(() => 'ASCII preview unavailable');
