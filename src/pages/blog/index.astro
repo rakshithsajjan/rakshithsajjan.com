@@ -21,7 +21,7 @@ const sorted = posts.sort((a, b) => new Date(b.frontmatter.pubDate).getTime() - 
       <h1>Writing</h1>
       <p>Updated as ideas show up in the drafts folder.</p>
       {sorted.map((post) => (
-        <PostCard post={post} key={post.slug} />
+        <PostCard post={post} />
       ))}
     </div>
   </main>
