@@ -44,6 +44,14 @@ function hexToRgb(hex: string) {
   };
 }
 
+function brightenRgb(rgb: { r: number; g: number; b: number }, amount: number) {
+  return {
+    r: Math.round(rgb.r + (255 - rgb.r) * amount),
+    g: Math.round(rgb.g + (255 - rgb.g) * amount),
+    b: Math.round(rgb.b + (255 - rgb.b) * amount)
+  };
+}
+
 function nowMs() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
@@ -331,7 +339,7 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const lineHeight = coverHeight / meta.rows;
     const fontSize = Math.max(4, lineHeight);
 
-    const rgb = hexToRgb(meta.tintColor || '#ffbf00');
+    const rgb = brightenRgb(hexToRgb(meta.tintColor || '#ffbf00'), 0.22);
     const brightnessBoost = 1.2;
     const phosphorStrength = Math.min(
       1,
@@ -344,8 +352,8 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
-    ctx.shadowBlur = 4;
+    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.52)`;
+    ctx.shadowBlur = 6;
 
     const chars = meta.charset;
     const rowBuffer = new Array(meta.cols);

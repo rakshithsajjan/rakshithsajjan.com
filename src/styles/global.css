@@ -67,12 +67,12 @@ img {
   padding: 0;
   overflow: hidden;
   white-space: pre;
-  color: #ffbf00;
+  color: #ffd84d;
   font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   font-size: max(1.1905vh, 0.672vw);
   line-height: 1;
   letter-spacing: 0;
-  text-shadow: 0 0 6px rgba(255, 191, 0, 0.45);
+  text-shadow: 0 0 8px rgba(255, 216, 77, 0.62);
 }
 
 .hero .overlay {
