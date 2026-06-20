@@ -5,6 +5,7 @@ import matter from 'gray-matter';
 const contentDir = path.resolve('src/content/blog');
 const outputPath = path.resolve('public/search-index.json');
 
+await fs.mkdir(contentDir, { recursive: true });
 const files = await fs.readdir(contentDir);
 const posts = [];
 
