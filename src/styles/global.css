@@ -64,12 +64,12 @@ img {
 
 .ascii-bg__poster {
   margin: 0;
-  padding: 0.5rem;
+  padding: 0;
   overflow: hidden;
   white-space: pre;
   color: #ffbf00;
   font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: clamp(4px, 0.54vw, 9px);
+  font-size: max(1.1905vh, 0.672vw);
   line-height: 1;
   letter-spacing: 0;
   text-shadow: 0 0 6px rgba(255, 191, 0, 0.45);

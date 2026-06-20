@@ -57,42 +57,14 @@ async function getAsset(event, request = event.request) {
 }
 
 async function getAsciiFrames(event) {
-  if (!acceptsBrotli(event.request)) {
-    const response = await getAsset(event);
-    const headers = new Headers(response.headers);
-    headers.set('Vary', appendVary(headers, 'Accept-Encoding'));
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers
-    });
-  }
-
-  const brUrl = new URL(event.request.url);
-  brUrl.pathname = '/media/ascii-bike/frames.bin.br';
-  const brRequest = new Request(brUrl.toString(), event.request);
-
-  try {
-    const response = await getAsset(event, brRequest);
-    const headers = new Headers(response.headers);
-    headers.set('Content-Encoding', 'br');
-    headers.set('Content-Type', 'application/octet-stream');
-    headers.set('Vary', appendVary(headers, 'Accept-Encoding'));
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers
-    });
-  } catch (error) {
-    const response = await getAsset(event);
-    const headers = new Headers(response.headers);
-    headers.set('Vary', appendVary(headers, 'Accept-Encoding'));
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers
-    });
-  }
+  const response = await getAsset(event);
+  const headers = new Headers(response.headers);
+  headers.set('Vary', appendVary(headers, 'Accept-Encoding'));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
 }
 
 async function handle(event) {
