@@ -20,6 +20,7 @@ const description = Astro.props.description ?? 'Personal site + blog for Rakshit
       rel="stylesheet"
     />
     <link rel="icon" href="/favicon.svg" />
+    <slot name="head" />
     <style is:global>
       @import "../styles/global.css";
     </style>

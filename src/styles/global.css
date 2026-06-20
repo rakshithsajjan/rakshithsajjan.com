@@ -52,6 +52,11 @@ img {
   height: 100%;
 }
 
+.ascii-bg__canvas[hidden],
+.ascii-bg__poster[hidden] {
+  display: none;
+}
+
 .ascii-bg__canvas {
   display: block;
   image-rendering: pixelated;

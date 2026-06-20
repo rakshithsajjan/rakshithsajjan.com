@@ -3,6 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import PostCard from '../components/PostCard.astro';
 import Search from '../components/Search.astro';
 import AsciiBackground from '../components/AsciiBackground.astro';
+import { getAsciiAssetUrls } from '../lib/ascii-assets';
 
 const postModules = import.meta.glob('../content/blog/*.md', { eager: true });
 const posts = Object.entries(postModules).map(([file, module]) => {
@@ -20,14 +21,22 @@ const sortedPosts = posts.sort((a, b) => {
 });
 
 const hero = sortedPosts[0];
+const asciiAssets = getAsciiAssetUrls();
 ---
 <BaseLayout title="Rakshith Sajjan" description="Experiments and writing from Rakshith Sajjan.">
+  <Fragment slot="head">
+    <link rel="preload" href={asciiAssets.manifestUrl} as="fetch" type="application/json" crossorigin="anonymous" />
+    <link rel="preload" href={asciiAssets.framesUrl} as="fetch" type="application/octet-stream" crossorigin="anonymous" />
+  </Fragment>
   <main>
     <section class="hero">
-      <AsciiBackground />
+      <AsciiBackground
+        manifestUrl={asciiAssets.manifestUrl}
+        framesUrl={asciiAssets.framesUrl}
+        posterUrl={asciiAssets.posterUrl}
+      />
       <div class="overlay"></div>
       <div class="content">
-        <p>Computing · Design · Life</p>
         <h1>Rakshith Sajjan</h1>
         <p>Writing, tinkering, and building in public. This site is home for long-form thoughts, experiments, and a bit of personality.</p>
         {hero ? (

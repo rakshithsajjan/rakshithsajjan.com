@@ -21,6 +21,15 @@ type Manifest = {
   videoAspect?: number;
 };
 
+type DecodeOptions = {
+  onFirstFrame?: (frame: Uint8Array) => void;
+  shouldStop?: () => boolean;
+};
+
+const fallbackPoster = 'ASCII preview unavailable';
+const speedRampFirstLegMs = 1500;
+const speedRampSecondLegMs = 2500;
+
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '').trim();
   const full = normalized.length === 3
@@ -35,13 +44,63 @@ function hexToRgb(hex: string) {
   };
 }
 
-async function fetchBytes(url: string): Promise<Uint8Array> {
-  const response = await fetch(url);
+function nowMs() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+function yieldToBrowser() {
+  return new Promise<void>((resolve) => {
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+    };
+    if (idleWindow.requestIdleCallback) {
+      idleWindow.requestIdleCallback(resolve, { timeout: 50 });
+      return;
+    }
+    window.setTimeout(resolve, 0);
+  });
+}
+
+function lerp(from: number, to: number, progress: number) {
+  return from + (to - from) * Math.max(0, Math.min(1, progress));
+}
+
+function playbackSpeedFor(elapsedMs: number) {
+  if (elapsedMs < speedRampFirstLegMs) {
+    return lerp(0.2, 0.5, elapsedMs / speedRampFirstLegMs);
+  }
+
+  const secondLegElapsed = elapsedMs - speedRampFirstLegMs;
+  if (secondLegElapsed < speedRampSecondLegMs) {
+    return lerp(0.5, 1, secondLegElapsed / speedRampSecondLegMs);
+  }
+
+  return 1;
+}
+
+async function fetchManifest(url: string, signal?: AbortSignal): Promise<Manifest> {
+  const response = await fetch(url, { credentials: 'same-origin', signal });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  }
+  return (await response.json()) as Manifest;
+}
+
+async function fetchBytes(url: string, signal?: AbortSignal): Promise<Uint8Array> {
+  const response = await fetch(url, { credentials: 'same-origin', signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: ${response.status}`);
   }
   const buffer = await response.arrayBuffer();
   return new Uint8Array(buffer);
+}
+
+async function loadPoster(posterUrl: string, signal?: AbortSignal) {
+  const response = await fetch(posterUrl, { credentials: 'same-origin', signal });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${posterUrl}: ${response.status}`);
+  }
+  return response.text();
 }
 
 function decodeKeyframe(payload: Uint8Array, offset: number, frameSize: number) {
@@ -98,30 +157,45 @@ function decodeDelta(payload: Uint8Array, offset: number, previous: Uint8Array) 
   return { frame, nextOffset: cursor };
 }
 
-function decodeFrames(payload: Uint8Array, manifest: Manifest) {
+async function decodeFrames(payload: Uint8Array, manifest: Manifest, options: DecodeOptions = {}) {
+  if (manifest.encoding !== 'delta-rle-v1') {
+    throw new Error(`Unsupported ASCII frame encoding: ${manifest.encoding}`);
+  }
+
   const frames: Uint8Array[] = [];
   const frameSize = manifest.cols * manifest.rows;
   let cursor = 0;
   let previous: Uint8Array | null = null;
+  let lastYield = nowMs();
 
   while (cursor < payload.length && frames.length < manifest.frameCount) {
+    if (options.shouldStop?.()) {
+      throw new Error('ASCII player destroyed before decode completed');
+    }
+
     const frameType = payload[cursor++];
     if (frameType === 0 || !previous) {
       const decoded = decodeKeyframe(payload, cursor, frameSize);
       frames.push(decoded.frame);
       previous = decoded.frame;
       cursor = decoded.nextOffset;
-      continue;
-    }
-
-    if (frameType !== 1) {
+    } else if (frameType === 1) {
+      const decoded = decodeDelta(payload, cursor, previous);
+      frames.push(decoded.frame);
+      previous = decoded.frame;
+      cursor = decoded.nextOffset;
+    } else {
       throw new Error(`Unknown frame type: ${frameType}`);
     }
 
-    const decoded = decodeDelta(payload, cursor, previous);
-    frames.push(decoded.frame);
-    previous = decoded.frame;
-    cursor = decoded.nextOffset;
+    if (frames.length === 1) {
+      options.onFirstFrame?.(frames[0]);
+    }
+
+    if (frames.length % 4 === 0 || nowMs() - lastYield > 8) {
+      await yieldToBrowser();
+      lastYield = nowMs();
+    }
   }
 
   if (frames.length !== manifest.frameCount) {
@@ -129,14 +203,6 @@ function decodeFrames(payload: Uint8Array, manifest: Manifest) {
   }
 
   return frames;
-}
-
-async function loadPoster(posterUrl: string) {
-  const response = await fetch(posterUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${posterUrl}: ${response.status}`);
-  }
-  return response.text();
 }
 
 export function initAsciiPlayer(options: AsciiPlayerOptions) {
@@ -152,47 +218,64 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   const canvas = container.querySelector('canvas');
   const posterNode = container.querySelector('pre');
   if (!(canvas instanceof HTMLCanvasElement) || !(posterNode instanceof HTMLPreElement)) {
-    throw new Error('ASCII player container requires <canvas> and <pre>');
+    return () => {};
   }
 
   const ctx = canvas.getContext('2d');
   if (!ctx) {
-    throw new Error('Unable to get canvas context for ASCII player');
+    return () => {};
+  }
+
+  posterNode.hidden = false;
+  canvas.hidden = true;
+
+  const reducedMotion = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : { matches: false };
+
+  if (
+    reducedMotion.matches ||
+    typeof window.fetch !== 'function' ||
+    typeof window.requestAnimationFrame !== 'function'
+  ) {
+    return () => {};
   }
 
   let manifest: Manifest | null = null;
   let frames: Uint8Array[] = [];
+  let animationReady = false;
   let running = false;
-  let isVisible = true;
+  let isVisible = typeof document.visibilityState === 'undefined' || document.visibilityState === 'visible';
   let inViewport = true;
+  let isDestroyed = false;
   let rafId = 0;
   let frameIndex = 0;
   let frameStepMs = 1000 / 15;
   let lastTick = 0;
+  let rampElapsedMs = 0;
+  let frameElapsedMs = 0;
+  let lastRenderedFrame = -1;
+  let layoutDirty = true;
+  let canvasCssWidth = 0;
+  let canvasCssHeight = 0;
+  let canvasPixelWidth = 0;
+  let canvasPixelHeight = 0;
+  let canvasDpr = 0;
 
-  const observer = new IntersectionObserver((entries) => {
-    inViewport = entries[0]?.isIntersecting ?? true;
-    if (!inViewport) {
-      running = false;
-      return;
+  const abortController = typeof AbortController === 'function'
+    ? new AbortController()
+    : null;
+
+  function showPoster(text?: string) {
+    if (text && text.length > 0) {
+      posterNode.textContent = text;
     }
-    if (autoplay && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      running = true;
-    }
-  }, { threshold: 0.1 });
-
-  observer.observe(container);
-
-  const resizeObserver = new ResizeObserver(() => {
-    if (manifest) drawFrame(frames[frameIndex], manifest);
-  });
-
-  resizeObserver.observe(container);
-
-  function showPoster(text: string) {
-    posterNode.textContent = text;
     posterNode.hidden = false;
     canvas.hidden = true;
+    running = false;
+    lastTick = 0;
+    rampElapsedMs = 0;
+    frameElapsedMs = 0;
   }
 
   function showCanvas() {
@@ -200,18 +283,36 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     canvas.hidden = false;
   }
 
-  function drawFrame(frame: Uint8Array, meta: Manifest) {
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-    if (width < 1 || height < 1) return;
+  function drawFrame(frame: Uint8Array | undefined, meta: Manifest) {
+    if (!frame) return false;
+
+    const width = Math.round(container.clientWidth);
+    const height = Math.round(container.clientHeight);
+    if (width < 1 || height < 1) return false;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    const pixelWidth = Math.max(1, Math.floor(width * dpr));
+    const pixelHeight = Math.max(1, Math.floor(height * dpr));
+    if (
+      pixelWidth !== canvasPixelWidth ||
+      pixelHeight !== canvasPixelHeight ||
+      width !== canvasCssWidth ||
+      height !== canvasCssHeight ||
+      dpr !== canvasDpr
+    ) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      canvasPixelWidth = pixelWidth;
+      canvasPixelHeight = pixelHeight;
+      canvasCssWidth = width;
+      canvasCssHeight = height;
+      canvasDpr = dpr;
+    }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.shadowBlur = 0;
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
@@ -259,78 +360,130 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
     }
     ctx.restore();
+
+    layoutDirty = false;
+    return true;
+  }
+
+  function renderCurrentFrame(force = false) {
+    if (!manifest || frames.length === 0) return false;
+
+    const currentIndex = Math.min(frameIndex, frames.length - 1);
+    if (!force && !layoutDirty && lastRenderedFrame === currentIndex) {
+      return true;
+    }
+
+    const didDraw = drawFrame(frames[currentIndex], manifest);
+    if (didDraw) {
+      lastRenderedFrame = currentIndex;
+      if (canvas.hidden) showCanvas();
+    }
+    return didDraw;
+  }
+
+  function stopLoop() {
+    if (!rafId) return;
+    window.cancelAnimationFrame(rafId);
+    rafId = 0;
   }
 
   function tick(now: number) {
-    if (!manifest || frames.length === 0) {
-      rafId = window.requestAnimationFrame(tick);
+    rafId = 0;
+
+    if (!animationReady || !running || !isVisible || !inViewport || isDestroyed) {
       return;
     }
 
-    if (running && isVisible && inViewport) {
-      if (!lastTick) lastTick = now;
-      const elapsed = now - lastTick;
-      if (elapsed >= frameStepMs) {
-        const steps = Math.max(1, Math.floor(elapsed / frameStepMs));
-        frameIndex += steps;
-        if (loop) {
-          frameIndex %= frames.length;
-        } else if (frameIndex >= frames.length) {
-          frameIndex = frames.length - 1;
-          running = false;
-        }
-        lastTick = now;
-      }
-      drawFrame(frames[frameIndex], manifest);
+    if (!lastTick) {
+      lastTick = now;
+      renderCurrentFrame();
+      startLoop();
+      return;
     }
 
+    const elapsed = now - lastTick;
+    lastTick = now;
+    const speed = playbackSpeedFor(rampElapsedMs);
+    rampElapsedMs += elapsed;
+    frameElapsedMs += elapsed * speed;
+
+    if (frameElapsedMs >= frameStepMs) {
+      const steps = Math.max(1, Math.floor(frameElapsedMs / frameStepMs));
+      frameIndex += steps;
+      if (loop) {
+        frameIndex %= frames.length;
+      } else if (frameIndex >= frames.length) {
+        frameIndex = frames.length - 1;
+          running = false;
+        }
+      frameElapsedMs -= steps * frameStepMs;
+      renderCurrentFrame();
+    }
+
+    if (running) startLoop();
+  }
+
+  function startLoop() {
+    if (rafId || isDestroyed) return;
     rafId = window.requestAnimationFrame(tick);
   }
 
-  const visibilityHandler = () => {
-    isVisible = document.visibilityState === 'visible';
-    if (!isVisible) {
-      lastTick = 0;
-    }
-  };
-
-  document.addEventListener('visibilitychange', visibilityHandler);
-
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let isDestroyed = false;
-
-  Promise.all([
-    fetch(manifestUrl).then(async (res) => {
-      if (!res.ok) throw new Error(`Failed to fetch ${manifestUrl}: ${res.status}`);
-      return (await res.json()) as Manifest;
-    }),
-    fetchBytes(framesUrl),
-    loadPoster(posterUrl)
-  ]).then(([meta, payload, posterText]) => {
-    manifest = meta;
-    frameStepMs = 1000 / Math.max(1, meta.fps || 15);
-
-    if (reducedMotion.matches) {
-      showPoster(posterText);
+  function resumeAnimation() {
+    if (!animationReady || reducedMotion.matches || !autoplay || !isVisible || !inViewport) {
       return;
     }
+    running = true;
+    startLoop();
+  }
 
-    frames = decodeFrames(payload, meta);
-    showCanvas();
-    running = autoplay;
-    drawFrame(frames[0], meta);
-  }).catch(async (error) => {
-    console.warn('ASCII player fallback to poster:', error);
-    const posterText = await loadPoster(posterUrl).catch(() => 'ASCII preview unavailable');
-    showPoster(posterText);
-  });
+  const visibilityHandler = () => {
+    isVisible = typeof document.visibilityState === 'undefined' || document.visibilityState === 'visible';
+    if (!isVisible) {
+      running = false;
+      lastTick = 0;
+      stopLoop();
+      return;
+    }
+    resumeAnimation();
+  };
 
-  rafId = window.requestAnimationFrame(tick);
+  const viewportHandler = (entries: IntersectionObserverEntry[]) => {
+    inViewport = entries[0]?.isIntersecting ?? true;
+    if (!inViewport) {
+      running = false;
+      lastTick = 0;
+      stopLoop();
+      return;
+    }
+    resumeAnimation();
+  };
+
+  const resizeHandler = () => {
+    layoutDirty = true;
+    renderCurrentFrame(true);
+  };
+
+  let observer: IntersectionObserver | null = null;
+  if (typeof IntersectionObserver === 'function') {
+    observer = new IntersectionObserver(viewportHandler, { threshold: 0.1 });
+    observer.observe(container);
+  }
+
+  let resizeObserver: ResizeObserver | null = null;
+  if (typeof ResizeObserver === 'function') {
+    resizeObserver = new ResizeObserver(resizeHandler);
+    resizeObserver.observe(container);
+  } else {
+    window.addEventListener('resize', resizeHandler);
+  }
+
+  document.addEventListener('visibilitychange', visibilityHandler);
 
   const pageHideHandler = (event: PageTransitionEvent) => {
     if (event.persisted) {
       running = false;
       lastTick = 0;
+      stopLoop();
       return;
     }
     cleanup();
@@ -338,19 +491,21 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
   const pageShowHandler = (event: PageTransitionEvent) => {
     if (isDestroyed || !event.persisted) return;
-    if (reducedMotion.matches) return;
-    if (autoplay && inViewport) {
-      running = true;
-      lastTick = 0;
-    }
+    layoutDirty = true;
+    renderCurrentFrame(true);
+    resumeAnimation();
   };
 
   const cleanup = () => {
     if (isDestroyed) return;
     isDestroyed = true;
-    window.cancelAnimationFrame(rafId);
-    observer.disconnect();
-    resizeObserver.disconnect();
+    abortController?.abort();
+    stopLoop();
+    observer?.disconnect();
+    resizeObserver?.disconnect();
+    if (!resizeObserver) {
+      window.removeEventListener('resize', resizeHandler);
+    }
     document.removeEventListener('visibilitychange', visibilityHandler);
     window.removeEventListener('pagehide', pageHideHandler);
     window.removeEventListener('pageshow', pageShowHandler);
@@ -360,5 +515,48 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   window.addEventListener('pagehide', pageHideHandler);
   window.addEventListener('pageshow', pageShowHandler);
   window.addEventListener('beforeunload', cleanup);
+
+  Promise.all([
+    fetchManifest(manifestUrl, abortController?.signal),
+    fetchBytes(framesUrl, abortController?.signal)
+  ]).then(async ([meta, payload]) => {
+    if (isDestroyed) return;
+
+    manifest = meta;
+    frameStepMs = 1000 / Math.max(1, meta.fps || 15);
+
+    const decodedFrames = await decodeFrames(payload, meta, {
+      onFirstFrame: (frame) => {
+        if (isDestroyed) return;
+        frames = [frame];
+        frameIndex = 0;
+        renderCurrentFrame(true);
+      },
+      shouldStop: () => isDestroyed
+    });
+
+    if (isDestroyed) return;
+    frames = decodedFrames;
+    animationReady = true;
+    frameIndex = 0;
+    lastTick = 0;
+    rampElapsedMs = 0;
+    frameElapsedMs = 0;
+    renderCurrentFrame(true);
+    resumeAnimation();
+  }).catch(async (error) => {
+    if (isDestroyed) return;
+    console.warn('ASCII player fallback to poster:', error);
+
+    const existingPoster = posterNode.textContent ?? '';
+    if (existingPoster.length > 0) {
+      showPoster();
+      return;
+    }
+
+    const posterText = await loadPoster(posterUrl, abortController?.signal).catch(() => fallbackPoster);
+    showPoster(posterText);
+  });
+
   return cleanup;
 }
