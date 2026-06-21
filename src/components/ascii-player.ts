@@ -30,6 +30,10 @@ type DecodeOptions = {
 const fallbackPoster = 'ASCII preview unavailable';
 const speedRampFirstLegMs = 1500;
 const speedRampSecondLegMs = 2500;
+const defaultTintColor = '#ffbf00';
+const defaultGlyphAspect = 0.62;
+const defaultPhosphorStrength = 0.9;
+const defaultVideoAspect = 16 / 9;
 const loaderGlyphs: Record<string, string[]> = {
   '0': [
     ' ##### ',
@@ -517,7 +521,8 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     if (!dimensions) return false;
 
     const { width, height } = dimensions;
-    const targetAspect = options.videoAspect ?? ((cols * (options.glyphAspect ?? 0.62)) / rows);
+    const glyphAspect = options.glyphAspect ?? defaultGlyphAspect;
+    const targetAspect = options.videoAspect ?? ((cols * glyphAspect) / rows);
     const containerAspect = width / height;
     let coverWidth = width;
     let coverHeight = height;
@@ -532,11 +537,11 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     const lineHeight = coverHeight / rows;
     const fontSize = Math.max(4, lineHeight);
 
-    const rgb = brightenRgb(hexToRgb(tintColor || '#ffbf00'), 0.22);
+    const rgb = brightenRgb(hexToRgb(tintColor || defaultTintColor), 0.22);
     const brightnessBoost = 1.2;
     const phosphorStrength = Math.min(
       1,
-      Math.max(0.4, (options.phosphorStrength ?? 0.82) * brightnessBoost)
+      Math.max(0.4, (options.phosphorStrength ?? defaultPhosphorStrength) * brightnessBoost)
     );
     const frameFillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
     const frameShadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.52)`;
@@ -600,11 +605,11 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       (x, y) => posterRows[y]?.[x] ?? ' ',
       cols,
       posterRows.length,
-      manifest?.tintColor ?? '#ffbf00',
+      manifest?.tintColor ?? defaultTintColor,
       {
-        glyphAspect: manifest?.glyphAspect,
-        phosphorStrength: manifest?.phosphorStrength,
-        videoAspect: manifest?.videoAspect
+        glyphAspect: manifest?.glyphAspect ?? defaultGlyphAspect,
+        phosphorStrength: manifest?.phosphorStrength ?? defaultPhosphorStrength,
+        videoAspect: manifest?.videoAspect ?? defaultVideoAspect
       }
     );
   }
@@ -775,6 +780,9 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   window.addEventListener('pagehide', pageHideHandler);
   window.addEventListener('pageshow', pageShowHandler);
   window.addEventListener('beforeunload', cleanup);
+
+  drawPosterFrame();
+  showCanvas();
 
   const manifestPromise = fetchManifest(manifestUrl, abortController?.signal, (progress) => {
     manifestLoadProgress = progress;
