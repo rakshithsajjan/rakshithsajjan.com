@@ -200,30 +200,6 @@ function renderAsciiPercentage(percentage: number) {
   return rows.map((row) => row.trimEnd()).join('\n');
 }
 
-function composeAsciiOverlay(baseText: string, overlayText: string) {
-  const baseRows = baseText.split('\n');
-  const overlayRows = overlayText.split('\n');
-  const width = Math.max(...baseRows.map((row) => row.length), 0);
-  const overlayWidth = Math.max(...overlayRows.map((row) => row.length), 0);
-  const startY = Math.max(0, Math.floor((baseRows.length - overlayRows.length) / 2));
-  const startX = Math.max(0, Math.floor((width - overlayWidth) / 2));
-  const composedRows = baseRows.map((row) => row.padEnd(width, ' '));
-
-  overlayRows.forEach((overlayRow, rowIndex) => {
-    const targetIndex = startY + rowIndex;
-    if (targetIndex >= composedRows.length) return;
-    const target = composedRows[targetIndex].split('');
-    for (let i = 0; i < overlayRow.length && startX + i < target.length; i += 1) {
-      if (overlayRow[i] !== ' ') {
-        target[startX + i] = overlayRow[i];
-      }
-    }
-    composedRows[targetIndex] = target.join('');
-  });
-
-  return composedRows.join('\n');
-}
-
 async function fetchManifest(
   url: string,
   signal?: AbortSignal,
@@ -478,9 +454,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   function updateLoadingProgress(progress: number) {
     showLoadingProgress = true;
     loadingProgress = progress;
-    const percentage = Math.max(0, Math.min(99, Math.floor(progress * 100)));
-    if (canvas.hidden) {
-      posterNode.textContent = composeAsciiOverlay(posterBaseText, renderAsciiPercentage(percentage));
+    if (!manifest || frames.length === 0) {
+      drawPosterFrame();
+      showCanvas();
+      return;
     }
     renderCurrentFrame(true);
   }
@@ -495,12 +472,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     posterNode.textContent = posterBaseText;
   }
 
-  function drawFrame(frame: Uint8Array | undefined, meta: Manifest) {
-    if (!frame) return false;
-
+  function prepareCanvas() {
     const width = Math.round(container.clientWidth);
     const height = Math.round(container.clientHeight);
-    if (width < 1 || height < 1) return false;
+    if (width < 1 || height < 1) return null;
 
     const dpr = window.devicePixelRatio || 1;
     const pixelWidth = Math.max(1, Math.floor(width * dpr));
@@ -528,7 +503,21 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
-    const targetAspect = meta.videoAspect ?? ((meta.cols * (meta.glyphAspect ?? 0.62)) / meta.rows);
+    return { width, height };
+  }
+
+  function drawTextGrid(
+    getChar: (x: number, y: number) => string,
+    cols: number,
+    rows: number,
+    tintColor: string,
+    options: { glyphAspect?: number; phosphorStrength?: number; videoAspect?: number } = {}
+  ) {
+    const dimensions = prepareCanvas();
+    if (!dimensions) return false;
+
+    const { width, height } = dimensions;
+    const targetAspect = options.videoAspect ?? ((cols * (options.glyphAspect ?? 0.62)) / rows);
     const containerAspect = width / height;
     let coverWidth = width;
     let coverHeight = height;
@@ -540,14 +529,14 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
     const offsetX = (width - coverWidth) / 2;
     const offsetY = (height - coverHeight) / 2;
-    const lineHeight = coverHeight / meta.rows;
+    const lineHeight = coverHeight / rows;
     const fontSize = Math.max(4, lineHeight);
 
-    const rgb = brightenRgb(hexToRgb(meta.tintColor || '#ffbf00'), 0.22);
+    const rgb = brightenRgb(hexToRgb(tintColor || '#ffbf00'), 0.22);
     const brightnessBoost = 1.2;
     const phosphorStrength = Math.min(
       1,
-      Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
+      Math.max(0.4, (options.phosphorStrength ?? 0.82) * brightnessBoost)
     );
     const frameFillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
     const frameShadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.52)`;
@@ -558,34 +547,32 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
-    const cellWidth = coverWidth / meta.cols;
+    const cellWidth = coverWidth / cols;
     const scaleX = cellWidth / measuredGlyph;
     ctx.shadowColor = frameShadowColor;
     ctx.shadowBlur = 6;
 
-    const chars = meta.charset;
-    const rowBuffer = new Array(meta.cols);
-    const loadingBuffer = new Array(meta.cols);
+    const rowBuffer = new Array(cols);
+    const loadingBuffer = new Array(cols);
     const overlayRows = showLoadingProgress
       ? renderAsciiPercentage(Math.max(0, Math.min(99, Math.floor(loadingProgress * 100)))).split('\n')
       : [];
     const overlayWidth = Math.max(...overlayRows.map((row) => row.length), 0);
-    const overlayStartX = Math.max(0, Math.floor((meta.cols - overlayWidth) / 2));
-    const overlayStartY = Math.max(0, Math.floor((meta.rows - overlayRows.length) / 2));
+    const overlayStartX = Math.max(0, Math.floor((cols - overlayWidth) / 2));
+    const overlayStartY = Math.max(0, Math.floor((rows - overlayRows.length) / 2));
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(scaleX, 1);
-    for (let y = 0; y < meta.rows; y += 1) {
-      const rowStart = y * meta.cols;
+    for (let y = 0; y < rows; y += 1) {
       let hasLoadingChars = false;
-      for (let x = 0; x < meta.cols; x += 1) {
+      for (let x = 0; x < cols; x += 1) {
         const overlayChar = overlayRows[y - overlayStartY]?.[x - overlayStartX];
         if (overlayChar && overlayChar !== ' ') {
           rowBuffer[x] = ' ';
           loadingBuffer[x] = overlayChar;
           hasLoadingChars = true;
         } else {
-          rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
+          rowBuffer[x] = getChar(x, y);
           loadingBuffer[x] = ' ';
         }
       }
@@ -604,6 +591,33 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
     layoutDirty = false;
     return true;
+  }
+
+  function drawPosterFrame() {
+    const posterRows = posterBaseText.split('\n');
+    const cols = Math.max(...posterRows.map((row) => row.length), 1);
+    return drawTextGrid(
+      (x, y) => posterRows[y]?.[x] ?? ' ',
+      cols,
+      posterRows.length,
+      '#ffd84d'
+    );
+  }
+
+  function drawFrame(frame: Uint8Array | undefined, meta: Manifest) {
+    if (!frame) return false;
+
+    return drawTextGrid(
+      (x, y) => meta.charset[frame[(y * meta.cols) + x]] ?? ' ',
+      meta.cols,
+      meta.rows,
+      meta.tintColor,
+      {
+        glyphAspect: meta.glyphAspect,
+        phosphorStrength: meta.phosphorStrength,
+        videoAspect: meta.videoAspect
+      }
+    );
   }
 
   function renderCurrentFrame(force = false) {
