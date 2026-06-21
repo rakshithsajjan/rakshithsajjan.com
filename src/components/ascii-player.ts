@@ -23,12 +23,114 @@ type Manifest = {
 
 type DecodeOptions = {
   onFirstFrame?: (frame: Uint8Array) => void;
+  onProgress?: (progress: number) => void;
   shouldStop?: () => boolean;
 };
 
 const fallbackPoster = 'ASCII preview unavailable';
 const speedRampFirstLegMs = 1500;
 const speedRampSecondLegMs = 2500;
+const loaderGlyphs: Record<string, string[]> = {
+  '0': [
+    ' ##### ',
+    '##   ##',
+    '##  ###',
+    '## # ##',
+    '###  ##',
+    '##   ##',
+    ' ##### '
+  ],
+  '1': [
+    '  ##   ',
+    ' ###   ',
+    '  ##   ',
+    '  ##   ',
+    '  ##   ',
+    '  ##   ',
+    '###### '
+  ],
+  '2': [
+    ' ##### ',
+    '##   ##',
+    '     ##',
+    '   ### ',
+    '  ##   ',
+    '##     ',
+    '#######'
+  ],
+  '3': [
+    ' ##### ',
+    '##   ##',
+    '     ##',
+    '  #### ',
+    '     ##',
+    '##   ##',
+    ' ##### '
+  ],
+  '4': [
+    '##   ##',
+    '##   ##',
+    '##   ##',
+    '#######',
+    '     ##',
+    '     ##',
+    '     ##'
+  ],
+  '5': [
+    '#######',
+    '##     ',
+    '##     ',
+    '###### ',
+    '     ##',
+    '##   ##',
+    ' ##### '
+  ],
+  '6': [
+    ' ##### ',
+    '##   ##',
+    '##     ',
+    '###### ',
+    '##   ##',
+    '##   ##',
+    ' ##### '
+  ],
+  '7': [
+    '#######',
+    '     ##',
+    '    ## ',
+    '   ##  ',
+    '  ##   ',
+    ' ##    ',
+    '##     '
+  ],
+  '8': [
+    ' ##### ',
+    '##   ##',
+    '##   ##',
+    ' ##### ',
+    '##   ##',
+    '##   ##',
+    ' ##### '
+  ],
+  '9': [
+    ' ##### ',
+    '##   ##',
+    '##   ##',
+    ' ######',
+    '     ##',
+    '##   ##',
+    ' ##### '
+  ],
+  '%': [
+    '##    ##',
+    '##   ## ',
+    '    ##  ',
+    '   ##   ',
+    '  ##    ',
+    ' ##   ##',
+    '##    ##'
+  ]
+};
 
 function hexToRgb(hex: string) {
   const normalized = hex.replace('#', '').trim();
@@ -86,21 +188,94 @@ function playbackSpeedFor(elapsedMs: number) {
   return 1;
 }
 
-async function fetchManifest(url: string, signal?: AbortSignal): Promise<Manifest> {
-  const response = await fetch(url, { credentials: 'same-origin', signal });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+function renderAsciiPercentage(percentage: number) {
+  const rows = new Array(7).fill('');
+  for (const char of `${percentage}%`) {
+    const glyph = loaderGlyphs[char];
+    if (!glyph) continue;
+    for (let row = 0; row < rows.length; row += 1) {
+      rows[row] += `${glyph[row]}  `;
+    }
   }
-  return (await response.json()) as Manifest;
+  return rows.map((row) => row.trimEnd()).join('\n');
 }
 
-async function fetchBytes(url: string, signal?: AbortSignal): Promise<Uint8Array> {
+function composeAsciiOverlay(baseText: string, overlayText: string) {
+  const baseRows = baseText.split('\n');
+  const overlayRows = overlayText.split('\n');
+  const width = Math.max(...baseRows.map((row) => row.length), 0);
+  const overlayWidth = Math.max(...overlayRows.map((row) => row.length), 0);
+  const startY = Math.max(0, Math.floor((baseRows.length - overlayRows.length) / 2));
+  const startX = Math.max(0, Math.floor((width - overlayWidth) / 2));
+  const composedRows = baseRows.map((row) => row.padEnd(width, ' '));
+
+  overlayRows.forEach((overlayRow, rowIndex) => {
+    const targetIndex = startY + rowIndex;
+    if (targetIndex >= composedRows.length) return;
+    const target = composedRows[targetIndex].split('');
+    for (let i = 0; i < overlayRow.length && startX + i < target.length; i += 1) {
+      if (overlayRow[i] !== ' ') {
+        target[startX + i] = overlayRow[i];
+      }
+    }
+    composedRows[targetIndex] = target.join('');
+  });
+
+  return composedRows.join('\n');
+}
+
+async function fetchManifest(
+  url: string,
+  signal?: AbortSignal,
+  onProgress?: (progress: number) => void
+): Promise<Manifest> {
   const response = await fetch(url, { credentials: 'same-origin', signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: ${response.status}`);
   }
-  const buffer = await response.arrayBuffer();
-  return new Uint8Array(buffer);
+  const manifest = (await response.json()) as Manifest;
+  onProgress?.(1);
+  return manifest;
+}
+
+async function fetchBytes(
+  url: string,
+  signal?: AbortSignal,
+  onProgress?: (progress: number) => void
+): Promise<Uint8Array> {
+  const response = await fetch(url, { credentials: 'same-origin', signal });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  }
+
+  const contentLength = Number(response.headers.get('Content-Length'));
+  if (!response.body || !Number.isFinite(contentLength) || contentLength <= 0) {
+    const buffer = await response.arrayBuffer();
+    onProgress?.(1);
+    return new Uint8Array(buffer);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    chunks.push(value);
+    loaded += value.byteLength;
+    onProgress?.(loaded / contentLength);
+  }
+
+  const buffer = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  onProgress?.(1);
+  return buffer;
 }
 
 async function loadPoster(posterUrl: string, signal?: AbortSignal) {
@@ -199,6 +374,7 @@ async function decodeFrames(payload: Uint8Array, manifest: Manifest, options: De
     if (frames.length === 1) {
       options.onFirstFrame?.(frames[0]);
     }
+    options.onProgress?.(frames.length / manifest.frameCount);
 
     if (frames.length % 4 === 0 || nowMs() - lastYield > 8) {
       await yieldToBrowser();
@@ -269,6 +445,12 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   let canvasPixelWidth = 0;
   let canvasPixelHeight = 0;
   let canvasDpr = 0;
+  let manifestLoadProgress = 0;
+  let frameLoadProgress = 0;
+  let decodeProgress = 0;
+  let loadingProgress = 0;
+  let showLoadingProgress = false;
+  let posterBaseText = posterNode.textContent ?? '';
 
   const abortController = typeof AbortController === 'function'
     ? new AbortController()
@@ -276,10 +458,12 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
 
   function showPoster(text?: string) {
     if (text && text.length > 0) {
+      posterBaseText = text;
       posterNode.textContent = text;
     }
     posterNode.hidden = false;
     canvas.hidden = true;
+    showLoadingProgress = false;
     running = false;
     lastTick = 0;
     rampElapsedMs = 0;
@@ -289,6 +473,26 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   function showCanvas() {
     posterNode.hidden = true;
     canvas.hidden = false;
+  }
+
+  function updateLoadingProgress(progress: number) {
+    showLoadingProgress = true;
+    loadingProgress = progress;
+    const percentage = Math.max(0, Math.min(99, Math.floor(progress * 100)));
+    if (canvas.hidden) {
+      posterNode.textContent = composeAsciiOverlay(posterBaseText, renderAsciiPercentage(percentage));
+    }
+    renderCurrentFrame(true);
+  }
+
+  function syncLoadingProgress() {
+    updateLoadingProgress((manifestLoadProgress * 0.08) + (frameLoadProgress * 0.76) + (decodeProgress * 0.16));
+  }
+
+  function hideLoadingProgress() {
+    showLoadingProgress = false;
+    loadingProgress = 1;
+    posterNode.textContent = posterBaseText;
   }
 
   function drawFrame(frame: Uint8Array | undefined, meta: Manifest) {
@@ -345,27 +549,56 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       1,
       Math.max(0.4, (meta.phosphorStrength ?? 0.82) * brightnessBoost)
     );
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+    const frameFillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${phosphorStrength})`;
+    const frameShadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.52)`;
+    const loadingFillStyle = 'rgba(255, 255, 255, 0.98)';
+    const loadingShadowColor = 'rgba(255, 255, 255, 0.75)';
+    ctx.fillStyle = frameFillStyle;
     ctx.font = `${fontSize}px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
     ctx.imageSmoothingEnabled = false;
     ctx.textBaseline = 'top';
     const measuredGlyph = Math.max(0.0001, ctx.measureText('M').width);
     const cellWidth = coverWidth / meta.cols;
     const scaleX = cellWidth / measuredGlyph;
-    ctx.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.52)`;
+    ctx.shadowColor = frameShadowColor;
     ctx.shadowBlur = 6;
 
     const chars = meta.charset;
     const rowBuffer = new Array(meta.cols);
+    const loadingBuffer = new Array(meta.cols);
+    const overlayRows = showLoadingProgress
+      ? renderAsciiPercentage(Math.max(0, Math.min(99, Math.floor(loadingProgress * 100)))).split('\n')
+      : [];
+    const overlayWidth = Math.max(...overlayRows.map((row) => row.length), 0);
+    const overlayStartX = Math.max(0, Math.floor((meta.cols - overlayWidth) / 2));
+    const overlayStartY = Math.max(0, Math.floor((meta.rows - overlayRows.length) / 2));
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(scaleX, 1);
     for (let y = 0; y < meta.rows; y += 1) {
       const rowStart = y * meta.cols;
+      let hasLoadingChars = false;
       for (let x = 0; x < meta.cols; x += 1) {
-        rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
+        const overlayChar = overlayRows[y - overlayStartY]?.[x - overlayStartX];
+        if (overlayChar && overlayChar !== ' ') {
+          rowBuffer[x] = ' ';
+          loadingBuffer[x] = overlayChar;
+          hasLoadingChars = true;
+        } else {
+          rowBuffer[x] = chars[frame[rowStart + x]] ?? ' ';
+          loadingBuffer[x] = ' ';
+        }
       }
+      ctx.fillStyle = frameFillStyle;
+      ctx.shadowColor = frameShadowColor;
+      ctx.shadowBlur = 6;
       ctx.fillText(rowBuffer.join(''), 0, y * lineHeight);
+      if (hasLoadingChars) {
+        ctx.fillStyle = loadingFillStyle;
+        ctx.shadowColor = loadingShadowColor;
+        ctx.shadowBlur = 10;
+        ctx.fillText(loadingBuffer.join(''), 0, y * lineHeight);
+      }
     }
     ctx.restore();
 
@@ -524,9 +757,17 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   window.addEventListener('pageshow', pageShowHandler);
   window.addEventListener('beforeunload', cleanup);
 
+  updateLoadingProgress(0);
+
   Promise.all([
-    fetchManifest(manifestUrl, abortController?.signal),
-    fetchBytes(framesUrl, abortController?.signal)
+    fetchManifest(manifestUrl, abortController?.signal, (progress) => {
+      manifestLoadProgress = progress;
+      syncLoadingProgress();
+    }),
+    fetchBytes(framesUrl, abortController?.signal, (progress) => {
+      frameLoadProgress = progress;
+      syncLoadingProgress();
+    })
   ]).then(async ([meta, payload]) => {
     if (isDestroyed) return;
 
@@ -540,6 +781,10 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
         frameIndex = 0;
         renderCurrentFrame(true);
       },
+      onProgress: (progress) => {
+        decodeProgress = progress;
+        syncLoadingProgress();
+      },
       shouldStop: () => isDestroyed
     });
 
@@ -550,6 +795,8 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
     lastTick = 0;
     rampElapsedMs = 0;
     frameElapsedMs = 0;
+    renderCurrentFrame(true);
+    hideLoadingProgress();
     renderCurrentFrame(true);
     resumeAnimation();
   }).catch(async (error) => {
