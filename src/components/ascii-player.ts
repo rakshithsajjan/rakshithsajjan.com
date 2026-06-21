@@ -600,7 +600,12 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
       (x, y) => posterRows[y]?.[x] ?? ' ',
       cols,
       posterRows.length,
-      '#ffd84d'
+      manifest?.tintColor ?? '#ffbf00',
+      {
+        glyphAspect: manifest?.glyphAspect,
+        phosphorStrength: manifest?.phosphorStrength,
+        videoAspect: manifest?.videoAspect
+      }
     );
   }
 
@@ -771,13 +776,18 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   window.addEventListener('pageshow', pageShowHandler);
   window.addEventListener('beforeunload', cleanup);
 
-  updateLoadingProgress(0);
+  const manifestPromise = fetchManifest(manifestUrl, abortController?.signal, (progress) => {
+    manifestLoadProgress = progress;
+  }).then((meta) => {
+    if (isDestroyed) return meta;
+    manifest = meta;
+    frameStepMs = 1000 / Math.max(1, meta.fps || 15);
+    syncLoadingProgress();
+    return meta;
+  });
 
   Promise.all([
-    fetchManifest(manifestUrl, abortController?.signal, (progress) => {
-      manifestLoadProgress = progress;
-      syncLoadingProgress();
-    }),
+    manifestPromise,
     fetchBytes(framesUrl, abortController?.signal, (progress) => {
       frameLoadProgress = progress;
       syncLoadingProgress();
@@ -785,8 +795,11 @@ export function initAsciiPlayer(options: AsciiPlayerOptions) {
   ]).then(async ([meta, payload]) => {
     if (isDestroyed) return;
 
-    manifest = meta;
-    frameStepMs = 1000 / Math.max(1, meta.fps || 15);
+    if (!manifest) {
+      manifest = meta;
+      frameStepMs = 1000 / Math.max(1, meta.fps || 15);
+      syncLoadingProgress();
+    }
 
     const decodedFrames = await decodeFrames(payload, meta, {
       onFirstFrame: (frame) => {
