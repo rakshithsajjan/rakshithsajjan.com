@@ -5,6 +5,14 @@
 </section>
 
 <script type="module">
+  const debounce = (func, wait) => {
+    let timeout;
+    return (...args) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func(...args), wait);
+    };
+  };
+
   const fetchIndex = async () => {
     const response = await fetch('/search-index.json');
     return response.ok ? response.json() : [];
@@ -48,8 +56,12 @@
       renderResults(filtered);
     };
 
+    const debouncedSearch = debounce((value) => {
+      search(value);
+    }, 250);
+
     input.addEventListener('input', (event) => {
-      search(event.target.value);
+      debouncedSearch(event.target.value);
     });
 
     renderResults(posts);
